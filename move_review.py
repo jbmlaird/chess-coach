@@ -1,6 +1,12 @@
+from typing import Any
+
 from inspect_ai import task, Task
 from inspect_ai.dataset import json_dataset, Sample
-from typing import Any
+from inspect_ai.scorer import Score, scorer, accuracy, stderr, Target, CORRECT, INCORRECT
+from inspect_ai.solver import TaskState
+
+import best_move_parser
+from best_move_parser import Outcome
 
 PROMPT = """
 You are a chess coach reviewing a game with a club-level student.
@@ -30,7 +36,7 @@ legal for the side to move.
 Then respond in exactly this format, with nothing after it:
 
 VERDICT: <BLUNDER | MISTAKE | INACCURACY | GOOD | BEST>
-BEST_MOVE: <the strongest legal move in UCI notation; repeat your
+BEST_MOVE: <the strongest legal move in SAN notation; repeat your
 student's move here if they already found the best one>
 EXPLANATION: <two or three sentences aimed at a club player. Name the
 concrete tactic or positional point at stake — the specific piece,
@@ -38,15 +44,17 @@ square or line — rather than a general principle.>
 """
 
 
-@task
-def initial_boards() -> 'Task':
-    return Task(
-        name='Initial Boards',
-        dataset=json_dataset(
-            'initialboards.jsonl',
-            sample_fields=record_to_sample
-        ),
-    )
+@scorer(metrics=[accuracy(), stderr()])
+def legal_move():
+    async def score(state: TaskState, _: Target) -> Score:
+        parsed_verdict = best_move_parser.parse_best_move(state.metadata['board'], state.output.completion)
+        return Score(
+            value=CORRECT if parsed_verdict.outcome is Outcome.LEGAL else INCORRECT,
+            answer=parsed_verdict.answer,
+            explanation=parsed_verdict.explanation,
+        )
+
+    return score
 
 
 def record_to_sample(record: dict[str, Any]) -> Sample:
@@ -59,3 +67,15 @@ def record_to_sample(record: dict[str, Any]) -> Sample:
                       "board": record['fen'],
                       "played_move": record['played_move']}
                   )
+
+
+@task
+def positions() -> Task:
+    return Task(
+        name='Positions',
+        dataset=json_dataset(
+            'positions.jsonl',
+            sample_fields=record_to_sample
+        ),
+        scorer=legal_move(),
+    )
