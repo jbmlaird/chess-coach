@@ -2,11 +2,9 @@ from typing import Any
 
 from inspect_ai import task, Task
 from inspect_ai.dataset import json_dataset, Sample
-from inspect_ai.scorer import Score, scorer, accuracy, stderr, Target, CORRECT, INCORRECT
+from inspect_ai.scorer import Score, scorer, accuracy, stderr, Target, CORRECT, INCORRECT, NOANSWER
 from inspect_ai.solver import TaskState
-
-import best_move_parser
-from best_move_parser import Outcome
+from best_move_parser import Outcome, parse_best_move
 
 PROMPT = """
 You are a chess coach reviewing a game with a club-level student.
@@ -47,11 +45,20 @@ square or line — rather than a general principle.>
 @scorer(metrics=[accuracy(), stderr()])
 def legal_move():
     async def score(state: TaskState, _: Target) -> Score:
-        parsed_verdict = best_move_parser.parse_best_move(state.metadata['board'], state.output.completion)
+        parsed_move = parse_best_move(state.metadata['board'], state.output.completion)
+
+        if parsed_move.outcome == Outcome.LEGAL:
+            move_score = CORRECT
+        elif parsed_move.outcome == Outcome.PARSE_ERROR:
+            move_score = NOANSWER
+        else:
+            move_score = INCORRECT
+
         return Score(
-            value=CORRECT if parsed_verdict.outcome is Outcome.LEGAL else INCORRECT,
-            answer=parsed_verdict.answer,
-            explanation=parsed_verdict.explanation,
+            value=move_score,
+            answer=parsed_move.answer,
+            explanation=parsed_move.explanation,
+            metadata={"outcome": parsed_move.outcome.name},
         )
 
     return score
