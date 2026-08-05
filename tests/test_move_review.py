@@ -15,7 +15,7 @@ def make_state(board_fen: str, completion: str):
         input="unused",
         messages=[],
         output=ModelOutput.from_content(model="mockllm/model", content=completion),
-        metadata={"board": board_fen}
+        metadata={"fen": board_fen}
     )
 
 

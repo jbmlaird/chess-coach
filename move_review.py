@@ -1,9 +1,8 @@
-from typing import Any
-
 from inspect_ai import task, Task
-from inspect_ai.dataset import json_dataset, Sample
+from inspect_ai.dataset import json_dataset, FieldSpec
 from inspect_ai.scorer import Score, scorer, accuracy, stderr, Target, CORRECT, INCORRECT, NOANSWER
-from inspect_ai.solver import TaskState
+from inspect_ai.solver import TaskState, prompt_template, generate
+
 from best_move_parser import Outcome, parse_best_move
 
 PROMPT = """
@@ -13,7 +12,7 @@ Your student had this position in front of them. It is given in
 Forsyth-Edwards Notation, and the side to move in the FEN is your
 student's side:
 
-{board}
+{fen}
 
 It was their move, and they played:
 
@@ -45,7 +44,7 @@ square or line — rather than a general principle.>
 @scorer(metrics=[accuracy(), stderr()])
 def legal_move():
     async def score(state: TaskState, _: Target) -> Score:
-        parsed_move = parse_best_move(state.metadata['board'], state.output.completion)
+        parsed_move = parse_best_move(state.metadata['fen'], state.output.completion)
 
         if parsed_move.outcome == Outcome.LEGAL:
             move_score = CORRECT
@@ -64,25 +63,18 @@ def legal_move():
     return score
 
 
-def record_to_sample(record: dict[str, Any]) -> Sample:
-    return Sample(id=record['id'],
-                  input=PROMPT.format(
-                      board=record['fen'],
-                      played_move=record['played_move'],
-                  ),
-                  metadata={
-                      "board": record['fen'],
-                      "played_move": record['played_move']}
-                  )
-
-
 @task
 def positions() -> Task:
     return Task(
         name='Positions',
         dataset=json_dataset(
             'positions.jsonl',
-            sample_fields=record_to_sample
+            sample_fields=FieldSpec(
+                input="fen",
+                id="id",
+                metadata=["fen", "played_move"],
+            )
         ),
+        solver=[prompt_template(PROMPT), generate()],
         scorer=legal_move(),
     )
