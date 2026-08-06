@@ -8,6 +8,7 @@ dependencies = [
     "anthropic>=0.120.2",
     "chess>=1.11",
     "inspect-ai>=0.3.251",
+    "requests>=2.34.2",
 ]
 
 [dependency-groups]
