@@ -19,4 +19,16 @@ added to the archive) I compared the puzzles in this dump with puzzles in the du
 I then took those new puzzles and got the `PlayedDate` from the Lichess API, see how
 in [extract_post_cutoff_puzzles.py](/scripts/extract_post_cutoff_puzzles.py).
 
+Newly added puzzles are not yet tagged by Lichess so [motif_detector.py](/motif_detector.py) is created to tag puzzles
+for manual review to be part of the golden dataset. Lichess' own puzzle tagger
+is [here](https://github.com/ornicar/lichess-puzzler/blob/master/tagger/cook.py) which is used for inspiration but not
+sourced directly as I only want a subset and behaviour may be slightly different.
 
+## Different behaviour to Lichess' cook.py
+
+`hanging_piece` deliberately differs:
+
+- cook.py skips hung pawns, I include them. A one piece hang is still a hang, knowingly including gambits.
+- En passant hangs exist therefore included
+- cook.py refuses to tag when the setup move gives check and only a pawn (or nothing) is captured. Since I keep pawn
+  victims, I keep these too.
