@@ -19,16 +19,25 @@ added to the archive) I compared the puzzles in this dump with puzzles in the du
 I then took those new puzzles and got the `PlayedDate` from the Lichess API, see how
 in [extract_post_cutoff_puzzles.py](/scripts/extract_post_cutoff_puzzles.py).
 
-Newly added puzzles are not yet tagged by Lichess so [motif_detector.py](/motif_detector.py) is created to tag puzzles
-for manual review to be part of the golden dataset. Lichess' own puzzle tagger
-is [here](https://github.com/ornicar/lichess-puzzler/blob/master/tagger/cook.py) which is used for inspiration but not
-sourced directly as I only want a subset and behaviour may be slightly different.
+Newly added puzzles are not yet motif-tagged by Lichess (phase and length themes are present, tactic themes aren't) so
+[motif_detector.py](/motif_detector.py) was originally created to tag puzzles for manual review to be part of the
+golden dataset. Lichess' own puzzle tagger
+is [cook.py](https://github.com/ornicar/lichess-puzzler/blob/8d9faff694ba3a8598abc5465347209af3f90a82/tagger/cook.py)
+which I've vendored to tag the outstanding puzzles, rather than handroll myself. It's copied verbatim into
+[vendor/lichess_puzzler](/vendor/lichess_puzzler).
 
-## Different behaviour to Lichess' cook.py
+[tag_post_cutoff.py](/scripts/tag_post_cutoff.py) runs it over every post-cutoff puzzle and writes the labels to a
+sidecar [post_cutoff_themes.csv](/post_cutoff_themes.csv).
 
-`hanging_piece` deliberately differs:
+## motif_detector.py: an independent cross-check
+
+The shipped labels come from the vendored cook.py unmodified. motif_detector.py is kept as an independent cross-check
+on the vendored tagger's output; its `hanging_piece` deliberately differs:
 
 - cook.py skips hung pawns, I include them. A one piece hang is still a hang, knowingly including gambits.
 - En passant hangs exist therefore included
 - cook.py refuses to tag when the setup move gives check and only a pawn (or nothing) is captured. Since I keep pawn
   victims, I keep these too.
+
+Cross-checked on the same 4,000-row sample: the two agree on 3,887/4,000 verdicts (97.2%), and all 113 disagreements
+are the documented pawn/en-passant class - zero unexplained, zero where Lichess fires and I don't.

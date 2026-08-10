@@ -23,6 +23,8 @@ DETECTORS = {
     "hanging": (hanging_piece, "hangingPiece"),
 }
 
+DUMP_DEFAULT = Path.home() / ".cache" / "chess-coach-evals" / "lichess_db_puzzle.csv"
+
 TACTIC_THEMES = {
     "hangingPiece", "pin", "fork", "skewer", "discoveredAttack", "sacrifice",
     "deflection", "attraction", "mateIn1", "mateIn2", "mateIn3", "trappedPiece",
@@ -77,8 +79,7 @@ def calibrate(name: str, dump: Path, n: int, seed: int, examples: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--dump", type=Path,
-                        default=Path.home() / ".cache" / "chess-coach-evals" / "lichess_db_puzzle.csv",
+    parser.add_argument("--dump", type=Path, default=DUMP_DEFAULT,
                         help="an OLD, fully-theme-tagged puzzle dump (not the post-cutoff slice)")
     parser.add_argument("--detector", choices=DETECTORS, default=None,
                         help="calibrate one detector (default: all registered)")

@@ -1,0 +1,13 @@
+{
+  "source": "https://github.com/ornicar/lichess-puzzler",
+  "commit": "8d9faff694ba3a8598abc5465347209af3f90a82",
+  "retrieved": "2026-08-10",
+  "files": [
+    "cook.py",
+    "util.py",
+    "model.py",
+    "LICENSE"
+  ],
+  "license": "AGPL-3.0, see LICENSE in this directory",
+  "note": "Vendored verbatim (no local modifications): each file downloaded from raw.githubusercontent.com at the pinned commit above. Imported through lichess_tagger.py at the repo root via a temporary sys.path entry."
+}
