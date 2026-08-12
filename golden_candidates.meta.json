@@ -1,0 +1,16 @@
+{
+  "generated": "2026-08-10",
+  "seed": 40,
+  "puzzles": "post_cutoff_puzzles.csv",
+  "puzzles_size": 2925615,
+  "themes": "post_cutoff_themes.csv",
+  "themes_size": 517732,
+  "blunder_arm": 200,
+  "best_arm": 50,
+  "grid": "10 categories x 4 bands x 5 (blunder); 10 categories x 5 round-robin bands (best)",
+  "columns": "PlayedMove is UCI in FEN's position; Continuation is the engine line after PlayedMove, space-separated UCI; Category/Band are sampling strata baked at generation",
+  "review": "all 250 rows hand-reviewed, recorded in the Review column (grammar: 'ok' or 'ok: <note>'): 237 bare ok, 13 with notes, 0 rejections. Review is the only column not regenerable from the seed and sources - every generated column reproduces byte-identically from seed 40",
+  "frozen": "2026-08-11 as golden v1: 250 rows final (a planned manual chess.com game row was deliberately dropped - the best arm already covers what it was for)",
+  "csv_sha256": "7fb13e226f93250275ffcc00844e965e0350529606dcab26f8133849da0f5132",
+  "rating_caveat": "post-cutoff ratings are provisional; median RatingDeviation of the selection is 110, 149/250 over 100"
+}
