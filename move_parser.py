@@ -15,19 +15,26 @@ class Outcome(Enum):
 
 
 @dataclass(frozen=True)
-class ParsedBestMove:
+class ParsedMove:
     outcome: Outcome
     explanation: str
     answer: str | None
+    uci: str | None = None
 
 
 BEST_MOVE_RE = re.compile(r"BEST_MOVE\s*:[ \t]*(.+)", re.IGNORECASE)
+REFUTATION_RE = re.compile(r"REFUTATION\s*:[ \t]*(.+)", re.IGNORECASE)
 
 
-def extract_best_move(completion: str) -> str | None:
+def extract_move(completion: str, field_name: str) -> str | None:
     cleaned = completion.replace("*", "").replace("`", "")
 
-    matches = BEST_MOVE_RE.findall(cleaned)
+    matches = None
+    if field_name == "BEST_MOVE":
+        matches = BEST_MOVE_RE.findall(cleaned)
+    elif field_name == "REFUTATION":
+        matches = REFUTATION_RE.findall(cleaned)
+
     if not matches:
         return None
 
@@ -39,43 +46,44 @@ def extract_best_move(completion: str) -> str | None:
     return move or None
 
 
-def parse_best_move(board_fen: str, output: str) -> ParsedBestMove:
-    best_move = extract_best_move(output)
-    if best_move is None:
-        return ParsedBestMove(
+def parse_move_field(board_fen: str, output: str, field_name: str) -> ParsedMove:
+    parsed_move = extract_move(output, field_name)
+    if parsed_move is None:
+        return ParsedMove(
             outcome=Outcome.PARSE_ERROR,
-            explanation="No best move found in LLM output.",
+            explanation="No move found in LLM output.",
             answer=None,
         )
     board = chess.Board(board_fen)
     try:
-        move = board.parse_san(best_move)
+        move = board.parse_san(parsed_move)
         if not board.is_legal(move):
-            return ParsedBestMove(
+            return ParsedMove(
                 outcome=Outcome.ILLEGAL,
-                explanation=f"Null move provided: {best_move}",
-                answer=best_move,
+                explanation=f"Null move provided: {parsed_move}",
+                answer=parsed_move,
             )
     except InvalidMoveError as e:
-        return ParsedBestMove(
+        return ParsedMove(
             outcome=Outcome.INVALID,
             explanation=f"Move suggested is not valid: {e}",
-            answer=best_move,
+            answer=parsed_move,
         )
     except IllegalMoveError as e:
-        return ParsedBestMove(
+        return ParsedMove(
             outcome=Outcome.ILLEGAL,
             explanation=f"Move suggested is illegal: {e}",
-            answer=best_move,
+            answer=parsed_move,
         )
     except AmbiguousMoveError as e:
-        return ParsedBestMove(
+        return ParsedMove(
             outcome=Outcome.AMBIGUOUS,
             explanation=f"Unable to play move suggested: {e}",
-            answer=best_move,
+            answer=parsed_move,
         )
-    return ParsedBestMove(
+    return ParsedMove(
         outcome=Outcome.LEGAL,
         explanation="Legal move found.",
-        answer=best_move,
+        answer=parsed_move,
+        uci=move.uci(),
     )
