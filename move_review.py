@@ -7,6 +7,8 @@ from inspect_ai.solver import TaskState, prompt_template, generate
 from ground_truth_parser import Outcome as GroundTruthOutcome, parse_ground_truth
 from move_parser import Outcome as MoveParserOutcome, parse_move_field
 
+METADATA_FIELDS = ["FEN", "PlayedMove", "GroundTruth", "Arm", "Category", "Band", "Rating", "Continuation"]
+
 PROMPT = """
 You are a chess coach reviewing a game with a club-level student.
 
@@ -14,11 +16,11 @@ Your student had this position in front of them. It is given in
 Forsyth-Edwards Notation, and the side to move in the FEN is your
 student's side:
 
-{fen}
+{FEN}
 
 It was their move, and they played:
 
-{played_move}
+{PlayedMove}
 
 That move is in UCI notation: the square the piece started on followed
 by the square it moved to.
@@ -119,7 +121,7 @@ def positions() -> Task:
             sample_fields=FieldSpec(
                 input="FEN",
                 id="PuzzleId",
-                metadata=["FEN", "PlayedMove", "GroundTruth", "Arm", "Category", "Band", "Rating", "Continuation"],
+                metadata=METADATA_FIELDS,
             )
         ),
         solver=[prompt_template(PROMPT), generate()],

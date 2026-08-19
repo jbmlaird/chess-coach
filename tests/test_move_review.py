@@ -1,10 +1,11 @@
 import asyncio
+import string
 
 from inspect_ai.model import ModelOutput
 from inspect_ai.scorer import Target, CORRECT, INCORRECT, NOANSWER
 from inspect_ai.solver import TaskState
 
-from move_review import ground_truth, legal_move
+from move_review import METADATA_FIELDS, PROMPT, ground_truth, legal_move
 
 
 def make_state(board_fen: str, completion: str, metadata: dict | None = None):
@@ -103,3 +104,9 @@ def test_ground_truth_blunder_with_illegal_refutation():
     score = run_ground_truth("VERDICT: BLUNDER\nREFUTATION: Qh1", BLUNDER_META)
     assert INCORRECT == score.value
     assert "ILLEGAL" == score.metadata["outcome"]
+
+
+def test_prompt_placeholders_are_metadata_fields():
+    # ensures all placeholders are correctly set
+    placeholders = {name for _, name, _, _ in string.Formatter().parse(PROMPT) if name}
+    assert placeholders <= set(METADATA_FIELDS)
