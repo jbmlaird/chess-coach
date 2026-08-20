@@ -38,8 +38,9 @@ Then respond in exactly this format, with nothing after it:
 
 VERDICT: <BLUNDER | BEST>
 REFUTATION: <if BLUNDER: the opponent's reply that punishes the move, in
-SAN notation. If BEST: write NONE>
-BEST_MOVE: <the strongest legal move for your student in SAN notation;
+the same UCI notation (from-square then to-square, e.g. e7e5, or a7a8q
+for a promotion). If BEST: write NONE>
+BEST_MOVE: <the strongest legal move for your student in UCI notation;
 repeat their move here if it was already the best one>
 EXPLANATION: <two or three sentences aimed at a club player. Name the
 concrete tactic or positional point at stake - the specific piece,

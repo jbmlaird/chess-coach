@@ -82,3 +82,19 @@ def test_best_move_field_selectivity():
     parsed = move_parser.parse_move_field(ROOK_FEN, BOTH_FIELDS, "BEST_MOVE")
     assert parsed.outcome == Outcome.LEGAL
     assert parsed.uci == "a5b5"
+
+
+@pytest.mark.parametrize(
+    "completion,board_fen,outcome",
+    [
+        ("REFUTATION: The move wastes a chance; Black should play Ra3+ to win.",
+         ROOK_FEN, Outcome.INVALID),
+        ("REFUTATION: The move is illegal - a queen cannot move to f5 where the bishop stands",
+         ROOK_FEN, Outcome.INVALID),
+        ("REFUTATION: I cannot find anything decisive here.", ROOK_FEN, Outcome.INVALID),
+    ]
+)
+def test_prose_in_field_is_a_failure(completion, board_fen, outcome):
+    parsed = move_parser.parse_move_field(board_fen, completion, "REFUTATION")
+    assert parsed.outcome == outcome
+    assert parsed.uci is None
