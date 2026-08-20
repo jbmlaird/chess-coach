@@ -1,13 +1,17 @@
 import chess
+from ground_truth_parser import Outcome as GroundTruthOutcome, parse_ground_truth
 from inspect_ai import task, Task
 from inspect_ai.dataset import FieldSpec, csv_dataset
 from inspect_ai.scorer import Score, scorer, accuracy, stderr, Target, CORRECT, INCORRECT, NOANSWER, grouped
 from inspect_ai.solver import TaskState, prompt_template, generate
-
-from ground_truth_parser import Outcome as GroundTruthOutcome, parse_ground_truth
 from move_parser import Outcome as MoveParserOutcome, parse_move_field
 
 METADATA_FIELDS = ["FEN", "PlayedMove", "GroundTruth", "Arm", "Category", "Band", "Rating", "Continuation"]
+
+WRONG_VERDICT = "WRONG_VERDICT"
+CORRECT_VERDICT = "CORRECT_VERDICT"
+CORRECT_REFUTATION = "CORRECT_REFUTATION"
+WRONG_REFUTATION = "WRONG_REFUTATION"
 
 PROMPT = """
 You are a chess coach reviewing a game with a club-level student.
@@ -86,12 +90,12 @@ def ground_truth():
         if claimed != truth:
             return Score(value=INCORRECT, answer=claimed,
                          explanation=f"Verdict was {claimed} but the played move was {truth}.",
-                         metadata={"outcome": "WRONG_VERDICT"})
+                         metadata={"outcome": WRONG_VERDICT})
 
         if truth == "best":
             return Score(value=CORRECT, answer=claimed,
                          explanation="Correctly endorsed the best move.",
-                         metadata={"outcome": "CORRECT_VERDICT"})
+                         metadata={"outcome": CORRECT_VERDICT})
 
         refutation_board = chess.Board(state.metadata['FEN'])
         refutation_board.push_uci(state.metadata['PlayedMove'])
@@ -105,10 +109,10 @@ def ground_truth():
         if refutation.uci == expected:
             return Score(value=CORRECT, answer=refutation.answer,
                          explanation="Blunder identified with the certified refutation.",
-                         metadata={"outcome": "CORRECT_REFUTATION"})
+                         metadata={"outcome": CORRECT_REFUTATION})
         return Score(value=INCORRECT, answer=refutation.answer,
                      explanation=f"Refutation {refutation.answer} does not match certified {expected}.",
-                     metadata={"outcome": "WRONG_REFUTATION"})
+                     metadata={"outcome": WRONG_REFUTATION})
 
     return score
 
@@ -117,6 +121,7 @@ def ground_truth():
 def positions() -> Task:
     return Task(
         name='Positions',
+        version=2,
         dataset=csv_dataset(
             'golden_candidates.csv',
             sample_fields=FieldSpec(
