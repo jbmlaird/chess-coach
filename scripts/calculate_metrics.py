@@ -27,6 +27,7 @@ ARM_SIZES = {"blunder": GOLDEN_META["blunder_arm"], "best": GOLDEN_META["best_ar
 PRICES = {
     "anthropic/claude-haiku-4-5": (1.00, 5.00),
     "anthropic/claude-sonnet-4-6": (3.00, 15.00),
+    "anthropic/claude-opus-5": (5.00, 25.00),
 }
 
 CLAIMED_BLUNDER_OUTCOMES = {
