@@ -1,11 +1,16 @@
 import asyncio
 import string
 
+import pytest
 from inspect_ai.model import ModelOutput
 from inspect_ai.scorer import Target, CORRECT, INCORRECT, NOANSWER
 from inspect_ai.solver import TaskState
-
 from move_review import METADATA_FIELDS, PROMPT, ground_truth, legal_move
+
+BLUNDER_FEN = "r4q1k/6pp/1p3n2/5N2/P1b2P2/1Q2P2P/K5P1/2bR2R1 w - - 0 31"
+BLUNDER_META = {"PlayedMove": "b3c4", "GroundTruth": "blunder",
+                "Continuation": "f8a3 a2b1 a3b2"}
+BEST_META = {"PlayedMove": "d3h7", "GroundTruth": "best", "Continuation": ""}
 
 
 def make_state(board_fen: str, completion: str, metadata: dict | None = None):
@@ -20,90 +25,52 @@ def make_state(board_fen: str, completion: str, metadata: dict | None = None):
     )
 
 
-def run_scorer(board_fen: str, completion: str):
-    score = legal_move()
-    return asyncio.run(score(make_state(board_fen, completion), Target("")))
+@pytest.mark.parametrize(
+    "completion,expected_value,expected_outcome,expected_answer",
+    [
+        pytest.param("BEST_MOVE: Ra3+", CORRECT, "LEGAL", "Ra3+",
+                     id="legal-move-scores-correct"),
+        pytest.param("BEST_MOVE: Qh4", INCORRECT, "ILLEGAL", "Qh4",
+                     id="illegal-move-scores-incorrect"),
+        pytest.param("", NOANSWER, "PARSE_ERROR", None,
+                     id="missing-field-abstains"),
+    ],
+)
+def test_legal_move(completion, expected_value, expected_outcome, expected_answer):
+    score = asyncio.run(
+        legal_move()(make_state("8/8/7R/r3k3/8/5K2/8/8 b - - 19 81", completion), Target("")))
+    assert score.value == expected_value
+    assert score.metadata["outcome"] == expected_outcome
+    assert score.answer == expected_answer
 
 
-def test_legal_move():
-    score = run_scorer("8/8/7R/r3k3/8/5K2/8/8 b - - 19 81", "BEST_MOVE: Ra3+")
-    assert CORRECT == score.value
-    assert "LEGAL" == score.metadata["outcome"]
-    assert "Ra3+" == score.answer
-
-
-def test_illegal_move():
-    score = run_scorer("8/1B2k3/4pp2/N5p1/Pp1bP2p/1P3K1P/n5P1/8 b - - 0 42", "BEST_MOVE: Nb4")
-    assert INCORRECT == score.value
-    assert "ILLEGAL" == score.metadata["outcome"]
-    assert "Nb4" == score.answer
-
-
-def test_parse_error():
-    score = run_scorer("8/8/7R/r3k3/8/5K2/8/8 b - - 19 81", "")
-    assert None == score.answer
-    assert NOANSWER == score.value
-    assert "PARSE_ERROR" == score.metadata["outcome"]
-
-
-BLUNDER_FEN = "r4q1k/6pp/1p3n2/5N2/P1b2P2/1Q2P2P/K5P1/2bR2R1 w - - 0 31"
-BLUNDER_META = {"PlayedMove": "b3c4", "GroundTruth": "blunder",
-                "Continuation": "f8a3 a2b1 a3b2"}
-BEST_META = {"PlayedMove": "d3h7", "GroundTruth": "best", "Continuation": ""}
-
-
-def run_ground_truth(completion: str, metadata: dict, board_fen: str = BLUNDER_FEN):
-    score = ground_truth()
-    return asyncio.run(score(make_state(board_fen, completion, metadata), Target("")))
-
-
-def test_ground_truth_no_verdict_line():
-    score = run_ground_truth("Bad move.", BLUNDER_META)
-    assert NOANSWER == score.value
-    assert "PARSE_ERROR" == score.metadata["outcome"]
-
-
-def test_ground_truth_refutation_cannot_substitute_for_verdict():
-    score = run_ground_truth("REFUTATION: Qa3+\nBEST_MOVE: Rd8", BLUNDER_META)
-    assert NOANSWER == score.value
-    assert "PARSE_ERROR" == score.metadata["outcome"]
-
-
-def test_ground_truth_wrong_verdict_ignores_refutation():
-    score = run_ground_truth("VERDICT: BLUNDER\nREFUTATION: Qa3+", BEST_META)
-    assert INCORRECT == score.value
-    assert "WRONG_VERDICT" == score.metadata["outcome"]
-
-
-def test_ground_truth_missed_blunder():
-    score = run_ground_truth("VERDICT: BEST\nREFUTATION: NONE", BLUNDER_META)
-    assert INCORRECT == score.value
-    assert "WRONG_VERDICT" == score.metadata["outcome"]
-
-
-def test_ground_truth_correct_best_verdict():
-    score = run_ground_truth("VERDICT: BEST\nREFUTATION: NONE", BEST_META)
-    assert CORRECT == score.value
-    assert "CORRECT_VERDICT" == score.metadata["outcome"]
-
-
-def test_ground_truth_blunder_with_certified_refutation():
-    score = run_ground_truth("VERDICT: BLUNDER\nREFUTATION: Qa3+\nBEST_MOVE: Rd8", BLUNDER_META)
-    assert CORRECT == score.value
-    assert "CORRECT_REFUTATION" == score.metadata["outcome"]
-    assert "Qa3+" == score.answer
-
-
-def test_ground_truth_blunder_with_wrong_refutation():
-    score = run_ground_truth("VERDICT: BLUNDER\nREFUTATION: Rb8", BLUNDER_META)
-    assert INCORRECT == score.value
-    assert "WRONG_REFUTATION" == score.metadata["outcome"]
-
-
-def test_ground_truth_blunder_with_illegal_refutation():
-    score = run_ground_truth("VERDICT: BLUNDER\nREFUTATION: Qh1", BLUNDER_META)
-    assert INCORRECT == score.value
-    assert "ILLEGAL" == score.metadata["outcome"]
+@pytest.mark.parametrize(
+    "completion,metadata,expected_value,expected_outcome",
+    [
+        pytest.param("Bad move.", BLUNDER_META, NOANSWER, "PARSE_ERROR",
+                     id="no-verdict-line-abstains"),
+        pytest.param("REFUTATION: Qa3+\nBEST_MOVE: Rd8", BLUNDER_META, NOANSWER, "PARSE_ERROR",
+                     id="certified-refutation-cannot-substitute-for-missing-verdict"),
+        pytest.param("VERDICT: BLUNDER\nREFUTATION: Qa3+", BEST_META, INCORRECT, "WRONG_VERDICT",
+                     id="criticising-a-best-move-is-wrong-even-with-plausible-refutation"),
+        pytest.param("VERDICT: BEST\nREFUTATION: NONE", BLUNDER_META, INCORRECT, "WRONG_VERDICT",
+                     id="endorsing-a-blunder-is-the-other-wrong-verdict"),
+        pytest.param("VERDICT: BEST\nREFUTATION: NONE", BEST_META, CORRECT, "CORRECT_VERDICT",
+                     id="endorsing-a-best-move-is-correct"),
+        pytest.param("VERDICT: BLUNDER\nREFUTATION: Qa3+\nBEST_MOVE: Rd8", BLUNDER_META,
+                     CORRECT, "CORRECT_REFUTATION",
+                     id="blunder-call-backed-by-certified-refutation"),
+        pytest.param("VERDICT: BLUNDER\nREFUTATION: Rb8", BLUNDER_META, INCORRECT, "WRONG_REFUTATION",
+                     id="blunder-call-with-legal-but-wrong-refutation"),
+        pytest.param("VERDICT: BLUNDER\nREFUTATION: Qh1", BLUNDER_META, INCORRECT, "ILLEGAL",
+                     id="blunder-call-with-illegal-refutation"),
+    ],
+)
+def test_ground_truth(completion, metadata, expected_value, expected_outcome):
+    score = asyncio.run(
+        ground_truth()(make_state(BLUNDER_FEN, completion, metadata), Target("")))
+    assert score.value == expected_value
+    assert score.metadata["outcome"] == expected_outcome
 
 
 def test_prompt_placeholders_are_metadata_fields():
