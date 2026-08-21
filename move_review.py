@@ -83,7 +83,7 @@ def ground_truth():
         if verdict.outcome == GroundTruthOutcome.PARSE_ERROR:
             return Score(value=NOANSWER, answer=None,
                          explanation="No VERDICT line found in the output.",
-                         metadata={"outcome": "PARSE_ERROR"})
+                         metadata={"outcome": MoveParserOutcome.PARSE_ERROR.name})
 
         truth = state.metadata['GroundTruth']
         claimed = "blunder" if verdict.outcome == GroundTruthOutcome.BLUNDER else "best"
@@ -105,6 +105,8 @@ def ground_truth():
                          explanation=f"Blunder called without a usable refutation: {refutation.explanation}",
                          metadata={"outcome": refutation.outcome.name})
 
+        # Strict single-answer match. Known edge case, some positions may have multiple mating moves. Golden v1 has
+        # exactly one affected row (FHpic: h2g1q certified, h2g1r also mates)
         expected = state.metadata['Continuation'].split()[0]
         if refutation.uci == expected:
             return Score(value=CORRECT, answer=refutation.answer,
