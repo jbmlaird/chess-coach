@@ -1,7 +1,7 @@
 import pytest
 
-import best_move_parser
-from best_move_parser import Outcome
+import move_parser
+from move_parser import Outcome
 
 
 @pytest.mark.parametrize(
@@ -50,5 +50,51 @@ from best_move_parser import Outcome
     ]
 )
 def test_eval(completion, board_fen, outcome):
-    parsed_verdict = best_move_parser.parse_best_move(board_fen, completion)
+    parsed_verdict = move_parser.parse_move_field(board_fen, completion, "BEST_MOVE")
     assert parsed_verdict.outcome == outcome
+
+
+ROOK_FEN = "8/8/7R/r3k3/8/5K2/8/8 b - - 19 81"
+BOTH_FIELDS = "VERDICT: BLUNDER\nREFUTATION: Ra3+\nBEST_MOVE: Rb5\nEXPLANATION: text."
+
+
+@pytest.mark.parametrize(
+    "completion,board_fen,outcome,uci",
+    [
+        (BOTH_FIELDS, ROOK_FEN, Outcome.LEGAL, "a5a3"),
+
+        ("BEST_MOVE: Ra3+", ROOK_FEN, Outcome.PARSE_ERROR, None),
+
+        ("REFUTATION: NONE", ROOK_FEN, Outcome.INVALID, None),
+        ("**REFUTATION:** Ra3+", ROOK_FEN, Outcome.LEGAL, "a5a3"),  # markdown stripped
+        ("REFUTATION: Ra3+\nREFUTATION: Rb3+", ROOK_FEN, Outcome.ILLEGAL, None),  # last match wins
+        # uci carries the promotion suffix
+        ("REFUTATION: g8=Q", "8/1k4P1/8/8/8/8/2K5/8 w - - 0 1", Outcome.LEGAL, "g7g8q"),
+    ]
+)
+def test_refutation_field(completion, board_fen, outcome, uci):
+    parsed = move_parser.parse_move_field(board_fen, completion, "REFUTATION")
+    assert parsed.outcome == outcome
+    assert parsed.uci == uci
+
+
+def test_best_move_field_selectivity():
+    parsed = move_parser.parse_move_field(ROOK_FEN, BOTH_FIELDS, "BEST_MOVE")
+    assert parsed.outcome == Outcome.LEGAL
+    assert parsed.uci == "a5b5"
+
+
+@pytest.mark.parametrize(
+    "completion,board_fen,outcome",
+    [
+        ("REFUTATION: The move wastes a chance; Black should play Ra3+ to win.",
+         ROOK_FEN, Outcome.INVALID),
+        ("REFUTATION: The move is illegal - a queen cannot move to f5 where the bishop stands",
+         ROOK_FEN, Outcome.INVALID),
+        ("REFUTATION: I cannot find anything decisive here.", ROOK_FEN, Outcome.INVALID),
+    ]
+)
+def test_prose_in_field_is_a_failure(completion, board_fen, outcome):
+    parsed = move_parser.parse_move_field(board_fen, completion, "REFUTATION")
+    assert parsed.outcome == outcome
+    assert parsed.uci is None

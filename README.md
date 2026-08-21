@@ -51,6 +51,73 @@ as if they were missing tags:
 * [BaYNY](https://lichess.org/training/BaYNY) - this tactic has no codified theme, but it uses the player's King to box
   in the other King
 
+## Results
+
+### Baseline results (2026-08-18/19, golden v1, 250 rows, no tools)
+
+|                                                                         | Haiku 4.5 | Sonnet 4.6 |
+|-------------------------------------------------------------------------|-----------|------------|
+| Verdict + refutation accuracy (overall)                                 | 18.4%     | 16.8%      |
+| - blunder arm / best arm                                                | 11% / 48% | 13% / 32%  |
+| Blunder class - recall (caught real blunders)                           | 93.0%     | 86.5%      |
+| Blunder class - precision (calls that were right)                       | 87.7%     | 83.6%      |
+| Best class - recall (endorsed real best moves)                          | 48.0%     | 32.0%      |
+| Best class - precision (endorsements right)                             | 63.2%     | 37.2%      |
+| Substantiation (correct blunder calls backing the certified refutation) | 11.8%     | 15.0%      |
+| Unplayable refutations (illegal, invalid or ambiguous)                                   | 84/200    | 46/200     |
+| Legal `BEST_MOVE` suggestions                                           | 58%       | 69%        |
+| Measured cost (full run)                                                | ~$1.00    | ~$4.04     |
+
+Cutting edge frontier models are currently excluded until the harness is built out more. Logs are viewable in `/logs`
+viewable with `uv run inspect view` from the root. The accuracy rows are pulled from the log metadata, the rest of the
+metrics are calculated via the [calculate_metrics](scripts/calculate_metrics.py) script.
+
+Both models love to call things a blunder (93%/86.5% recall blunder-class), with the best-arm class showing that it errs
+on the side of calling best moves also a blunder (48%/32% recall best-class). The blunder-class recall would make it
+seem like the model is performing great without the best-class stats.
+
+When a model correctly calls a blunder, it can only name the punishing reply 11.8%/15.0% of the time.
+
+After the first run against Haiku & Sonnet, I noticed that the "best move" suggested by the LLM are legal but bad. For
+example, `0F0X2` suggested best move `Qd4` which immediately hangs the queen. In `nBP6h`, the refutation line doesn't
+show a move but instead shows `REFUTATION: The move wastes a chance; Black should have played Bxa1 to win White's
+bishop. After Bb2, White continues but Black has missed the decisive material advantage.` not honouring the prompt.
+`fMkW1` suggested move `Rc6+` which was ambiguous as either rook could move to c6 and give check. To address this,
+all moves need to be provided in UCI so this ambiguity can be removed.
+
+Sample [3hzja](https://lichess.org/training/3hzja) (best arm) shows why we measure both legality and ground truth.
+The played move is Kxc7 - king takes rook. Haiku got the best verdict right but restated the move as `Rxc7`,
+misidentifying the capturing piece as the rook. Sonnet did the opposite by suggesting a perfectly legal move (`Ke5`)
+attached to the wrong verdict. Board-state tracking and chess judgment fail independently; one scorer would hide half
+the picture.
+
+For both of the above cases, I decided
+to [use UCI notation instead of SAN](https://github.com/jbmlaird/chess-coach/commit/78e80ae9f87d0ff912ad3ede3b72410de5089d76)
+aligning with the standard that UCI was created for chess engines since knowledge of the piece isn't required.
+
+### v2 results (2026-08-20, golden v1, 250 rows, no tools)
+
+|                                                                         | Haiku 4.5   | Sonnet 4.6  |
+|-------------------------------------------------------------------------|-------------|-------------|
+| Verdict + refutation accuracy (overall)                                 | 14.4%       | 21.6%       |
+| - blunder arm / best arm                                                | 10.5% / 30% | 13.5% / 54% |
+| Blunder class - recall (caught real blunders)                           | 88.5%       | 88.5%       |
+| Blunder class - precision (calls that were right)                       | 83.5%       | 88.5%       |
+| Best class - recall (endorsed real best moves)                          | 30.0%       | 54.0%       |
+| Best class - precision (endorsements right)                             | 39.5%       | 54.0%       |
+| Substantiation (correct blunder calls backing the certified refutation) | 11.9%       | 15.3%       |
+| Unplayable refutations (illegal, invalid or ambiguous)                                   | 88/200      | 39/200      |
+| Legal `BEST_MOVE` suggestions                                           | 47.2%       | 72%         |
+| Measured cost (full run)                                                | ~$1.02      | ~$4.70      |
+
+After switching to UCI, notation caused nearly every metric to drop for Haiku (substantiation was flat: 11.8% to 11.9%).
+Sonnet saw an increase to most of its metrics, most noticeably best-class precision (+17pp) & recall (+22pp), and the
+number of illegal moves suggested dropped.
+
+Worth pointing out that the substantiation barely shifted between version runs despite the notation change - naming
+the certified refutation is a verification problem, not a syntax problem, so grounding the model with Stockfish should
+move it. Ambiguous SAN outputs fell from 3 to 1 (Haiku) and 2 to 0 (Sonnet).
+
 ## motif_detector.py: an independent cross-check
 
 The shipped labels come from the vendored cook.py unmodified. motif_detector.py is kept as an independent cross-check
