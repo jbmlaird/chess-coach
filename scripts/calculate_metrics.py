@@ -1,4 +1,4 @@
-"""Derive the README's baseline metrics from an Inspect eval log"""
+"""Derive the README's results-table metrics from an Inspect eval log"""
 
 import argparse
 import json
@@ -9,7 +9,7 @@ from pathlib import Path
 import math
 import rich
 from inspect_ai.log import read_eval_log
-from inspect_ai.scorer import INCORRECT
+from inspect_ai.scorer import INCORRECT, NOANSWER
 
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
@@ -27,6 +27,7 @@ ARM_SIZES = {"blunder": GOLDEN_META["blunder_arm"], "best": GOLDEN_META["best_ar
 PRICES = {
     "anthropic/claude-haiku-4-5": (1.00, 5.00),
     "anthropic/claude-sonnet-4-6": (3.00, 15.00),
+    "anthropic/claude-opus-5": (5.00, 25.00),
 }
 
 CLAIMED_BLUNDER_OUTCOMES = {
@@ -59,6 +60,9 @@ def read_log(path: Path, verbose: bool):
     legal_move_outcomes = {"blunder": Counter(), "best": Counter()}
     missing_refutation = {"blunder": 0, "best": 0}
 
+    unfinished = Counter()
+    empty_output = {"blunder": 0, "best": 0}
+
     for sample in eval_log.samples:
         arm = sample.metadata['GroundTruth']
         ground_truth = sample.scores["ground_truth"]
@@ -66,6 +70,12 @@ def read_log(path: Path, verbose: bool):
         legal_move_outcomes[arm][sample.scores["legal_move"].metadata["outcome"]] += 1
         if ground_truth.metadata["outcome"] == Outcome.PARSE_ERROR.name and ground_truth.value == INCORRECT:
             missing_refutation[arm] += 1
+        if sample.output.stop_reason != "stop":
+            unfinished[sample.output.stop_reason] += 1
+        if not sample.output.completion:
+            empty_output[arm] += 1
+            assert ground_truth.value == NOANSWER, \
+                f"{sample.id}: empty output must score NOANSWER, got {ground_truth.value}"
 
     for arm, counts in ground_truth_outcomes.items():
         unknown = set(counts) - KNOWN_OUTCOMES
@@ -123,7 +133,8 @@ def read_log(path: Path, verbose: bool):
                              + blunder_ground_truths[Outcome.INVALID.name]
                              + blunder_ground_truths[Outcome.AMBIGUOUS.name])
     refutation_missing = missing_refutation["blunder"]
-    assert refutation_correct + refutation_wrong + refutation_unplayable + refutation_missing == claimed_blunder
+    assert refutation_correct + refutation_wrong + refutation_unplayable + refutation_missing == claimed_blunder, \
+        f"refutation ladder doesn't sum to claimed blunders: {dict(blunder_ground_truths)}"
 
     best_ground_truths = ground_truth_outcomes["best"]
     endorsed_best = best_ground_truths[CORRECT_VERDICT]
@@ -140,10 +151,14 @@ def read_log(path: Path, verbose: bool):
 
     substantiation = ratio(refutation_correct, claimed_blunder)
 
-    assert math.isclose(best_legal / sum(best_legal_moves.values()), legal_move_best_accuracy)
-    assert math.isclose(endorsed_best / sum(best_legal_moves.values()), ground_truth_best_accuracy)
-    assert math.isclose(blunder_legal / sum(blunder_ground_truths.values()), legal_move_blunder_accuracy)
-    assert math.isclose(refutation_correct / sum(blunder_ground_truths.values()), ground_truth_blunder_accuracy)
+    assert math.isclose(best_legal / sum(best_legal_moves.values()), legal_move_best_accuracy), \
+        "derived best-arm legality disagrees with the log's stored metric"
+    assert math.isclose(endorsed_best / sum(best_legal_moves.values()), ground_truth_best_accuracy), \
+        "derived best-arm accuracy disagrees with the log's stored metric"
+    assert math.isclose(blunder_legal / sum(blunder_ground_truths.values()), legal_move_blunder_accuracy), \
+        "derived blunder-arm legality disagrees with the log's stored metric"
+    assert math.isclose(refutation_correct / sum(blunder_ground_truths.values()), ground_truth_blunder_accuracy), \
+        "derived blunder-arm accuracy disagrees with the log's stored metric"
 
     print(f"legal_move_blunder_accuracy: {legal_move_blunder_accuracy}")
     print(f"legal_move_best_accuracy: {legal_move_best_accuracy}")
@@ -162,6 +177,11 @@ def read_log(path: Path, verbose: bool):
     print(f"best_precision: {best_precision}")
     print(f"substantiation: {substantiation}")
     print(f"unplayable refutations: {refutation_unplayable}/{sum(blunder_ground_truths.values())}")
+    total_samples = sum(ARM_SIZES.values())
+    total_empty = sum(empty_output.values())
+    print(f"unfinished samples (by stop_reason): {dict(unfinished) or 0}")
+    print(f"empty output samples: {total_empty}/{total_samples} "
+          f"(blunder arm {empty_output['blunder']}, best arm {empty_output['best']})")
 
     for model, usage in eval_log.stats.model_usage.items():
         if model not in PRICES:

@@ -1,0 +1,15 @@
+{
+  "tagger_source": "https://github.com/ornicar/lichess-puzzler",
+  "tagger_commit": "8d9faff694ba3a8598abc5465347209af3f90a82",
+  "generated": "2026-08-10",
+  "input": "post_cutoff_puzzles.csv",
+  "input_size": 2925615,
+  "cp_stubbed_to_zero": true,
+  "dropped_tags": [
+    "advantage",
+    "crushing",
+    "equality"
+  ],
+  "rows_tagged": 17539,
+  "rows_failed": 0
+}

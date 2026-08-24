@@ -64,13 +64,12 @@ as if they were missing tags:
 | Best class - recall (endorsed real best moves)                          | 48.0%     | 32.0%      |
 | Best class - precision (endorsements right)                             | 63.2%     | 37.2%      |
 | Substantiation (correct blunder calls backing the certified refutation) | 11.8%     | 15.0%      |
-| Unplayable refutations (illegal, invalid or ambiguous)                                   | 84/200    | 46/200     |
+| Unplayable refutations (illegal, invalid or ambiguous)                  | 84/200    | 46/200     |
 | Legal `BEST_MOVE` suggestions                                           | 58%       | 69%        |
 | Measured cost (full run)                                                | ~$1.00    | ~$4.04     |
 
-Cutting edge frontier models are currently excluded until the harness is built out more. Logs are viewable in `/logs`
-viewable with `uv run inspect view` from the root. The accuracy rows are pulled from the log metadata, the rest of the
-metrics are calculated via the [calculate_metrics](scripts/calculate_metrics.py) script.
+Logs live in `/logs`, viewable with `uv run inspect view` from the root. The accuracy rows are pulled from the
+log metadata, the rest of the metrics are calculated via the [calculate_metrics](scripts/calculate_metrics.py) script.
 
 Both models love to call things a blunder (93%/86.5% recall blunder-class), with the best-arm class showing that it errs
 on the side of calling best moves also a blunder (48%/32% recall best-class). The blunder-class recall would make it
@@ -95,28 +94,52 @@ For both of the above cases, I decided
 to [use UCI notation instead of SAN](https://github.com/jbmlaird/chess-coach/commit/78e80ae9f87d0ff912ad3ede3b72410de5089d76)
 aligning with the standard that UCI was created for chess engines since knowledge of the piece isn't required.
 
-### v2 results (2026-08-20, golden v1, 250 rows, no tools)
+### v2 results (2026-08-20/21, golden v1, 250 rows, no tools)
 
-|                                                                         | Haiku 4.5   | Sonnet 4.6  |
-|-------------------------------------------------------------------------|-------------|-------------|
-| Verdict + refutation accuracy (overall)                                 | 14.4%       | 21.6%       |
-| - blunder arm / best arm                                                | 10.5% / 30% | 13.5% / 54% |
-| Blunder class - recall (caught real blunders)                           | 88.5%       | 88.5%       |
-| Blunder class - precision (calls that were right)                       | 83.5%       | 88.5%       |
-| Best class - recall (endorsed real best moves)                          | 30.0%       | 54.0%       |
-| Best class - precision (endorsements right)                             | 39.5%       | 54.0%       |
-| Substantiation (correct blunder calls backing the certified refutation) | 11.9%       | 15.3%       |
-| Unplayable refutations (illegal, invalid or ambiguous)                                   | 88/200      | 39/200      |
-| Legal `BEST_MOVE` suggestions                                           | 47.2%       | 72%         |
-| Measured cost (full run)                                                | ~$1.02      | ~$4.70      |
+|                                                                         | Haiku 4.5   | Haiku 4.5 (thinking, 32k `max_tokens`) | Sonnet 4.6  | Sonnet 4.6 (thinking, 32k `max_tokens`) | Opus 5 (thinking disabled)         | Opus 5 (adaptive thinking, 32k `max_tokens`) | 
+|-------------------------------------------------------------------------|-------------|----------------------------------------|-------------|-----------------------------------------|------------------------------------|----------------------------------------------|
+| Verdict + refutation accuracy (overall)                                 | 14.4%       | 20.4%                                  | 21.6%       | 16.4%                                   | 31.2%                              | **34.8%**                                    |
+| - blunder arm / best arm                                                | 10.5% / 30% | 13.5% / 48%                            | 13.5% / 54% | 10.5% / 40%                             | 21.5% / **70.0%**                  | **28.0%** / 62.0%                            |
+| Blunder class - recall (caught real blunders)                           | **88.5%**   | 73.0%                                  | **88.5%**   | 37.5%                                   | 34.5%                              | 38.0%                                        |
+| Blunder class - precision (calls that were right)                       | 83.5%       | 84.9%                                  | 88.5%       | 89.3%                                   | **90.8%**                          | 84.4%                                        |
+| Best class - recall (endorsed real best moves)                          | 30.0%       | 48.0%                                  | 54.0%       | 40.0%                                   | **70.0%**                          | 62.0%                                        |
+| Best class - precision (endorsements right)                             | 39.5%       | 30.8%                                  | **54.0%**   | 38.5%                                   | 28.5%                              | 24.8%                                        |
+| Substantiation (correct blunder calls backing the certified refutation) | 11.9%       | 18.5%                                  | 15.3%       | 28.0%                                   | 62.3%                              | **73.7%**                                    |
+| Unplayable refutations (illegal, invalid or ambiguous)                  | 88/200      | 46/200                                 | 39/200      | 11/200                                  | **2/200**                          | 5/200                                        |
+| Legal `BEST_MOVE` suggestions                                           | 47.2%       | 70%                                    | 72%         | 44% (80.9% of answered)                 | 72.4%                              | **82.8%**                                    |
+| Unfinished samples (stop reason not `stop`)                             | **0**       | **0**                                  | **0**       | 115/250                                 | 29/250                             | 37/250                                       |
+| Empty outputs (whole budget spent thinking)                             | **0**       | **0**                                  | **0**       | 113/250 (45%)                           | **0**                              | 35/250 (14%)                                 |
+| Format failures (non-empty parse errors)                                | **0**       | **0**                                  | **0**       | 1                                       | 59/250 (23.6%, no thinking column) | **0**                                        |
+| Measured cost (full run)                                                | **~$1.02**  | ~$9.73                                 | ~$4.70      | ~$110.28                                | ~$99.75                            | ~$109.52                                     |
 
 After switching to UCI, notation caused nearly every metric to drop for Haiku (substantiation was flat: 11.8% to 11.9%).
 Sonnet saw an increase to most of its metrics, most noticeably best-class precision (+17pp) & recall (+22pp), and the
 number of illegal moves suggested dropped.
 
-Worth pointing out that the substantiation barely shifted between version runs despite the notation change - naming
-the certified refutation is a verification problem, not a syntax problem, so grounding the model with Stockfish should
-move it. Ambiguous SAN outputs fell from 3 to 1 (Haiku) and 2 to 0 (Sonnet).
+The substantiation barely shifted between version runs despite the notation change - naming the certified refutation is
+a verification problem, not a syntax problem, so grounding the model with Stockfish should move it. Ambiguous SAN
+outputs fell from 3 to 1 (Haiku) and 2 to 0 (Sonnet).
+
+I introduced Opus 5 at adaptive thinking to compare how a frontier model works ungrounded. Opus cries blunder a lot less
+often with its Blunder recall at 38% and precision about the same as the previous models and increased its
+substantiation massively, while reducing the number of unplayable refutations. It's unclear whether this is due to using
+adaptive thinking or a more powerful model is the main reason for this shift. The default max token size with Inspect is
+32k tokens (shared by thinking and answer), and the output of 37 samples were incomplete due to reaching that cap.
+
+A great example of exhausting the 32k `max_tokens` output cap: run `uv run inspect view` and open the link, take a look
+at
+`0F0X2` in the `sonnet-4-6-thinking` folder: `Let me step back`, `This is getting tangled, so let me step back`,
+`This is getting complicated, so let me step back`, `This line is getting tangled, so let me step back`,
+`Let me reconsider the position more practically`, `Stepping back from this deep line, I want to reconsider`,
+`Given the complexity, I'll step back and just evaluate the overall line`,
+`Actually, I'm overcomplicating this line. Let me step back` etc - it continuously re-evaluates the same lines then
+needs to restart.
+
+This isn't exclusive to thinking models, either. Opus 5 with no thinking also had max token exhaustion but the thinking
+into a hole was done in the prose returned rather than in a separate reasoning section.
+
+Compared with Opus, Sonnet 4.6 with no thinking performed the best with all samples finishing, and reasonable metrics at
+5% of the cost of Opus. The question remaining is, do these models perform at a similar level once they're grounded?
 
 ## motif_detector.py: an independent cross-check
 
