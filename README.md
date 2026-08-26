@@ -51,6 +51,21 @@ as if they were missing tags:
 * [BaYNY](https://lichess.org/training/BaYNY) - this tactic has no codified theme, but it uses the player's King to box
   in the other King
 
+## Engine certification of the golden set
+
+Before grading anything against Stockfish, I certified the dataset itself:
+[certify_golden.py](scripts/certify_golden.py) runs a pinned engine (Stockfish 18, 1M nodes/position) over every golden
+row and freezes the reference evals in [golden_engine.csv](golden_engine.csv). The engine verified the labels almost
+completely: on all 50 best-arm rows its best move _is_ the played move, and on all 200 blunder rows its best reply _is_
+the certified refutation
+
+...with one exception: on 4 blunder rows the player was already in a forced mate before the "blunder", so every legal
+move lost identically. This traces to how Lichess generates puzzles - the "setup move must have thrown the game away"
+gate only applies to advantage puzzles; mate puzzles certify the mating line with no requirement that the position was
+savable. A model answering `best` on those rows is engine-correct but scored wrong (at most ~2pp effect on blunder-arm
+accuracy, and since every model over-calls `blunder`, these rows mildly reward that bias). These 4 puzzles should be
+replaced when selecting a new dataset.
+
 ## Results
 
 ### Baseline results (2026-08-18/19, golden v1, 250 rows, no tools)
@@ -96,21 +111,29 @@ aligning with the standard that UCI was created for chess engines since knowledg
 
 ### v2 results (2026-08-20/21, golden v1, 250 rows, no tools)
 
-|                                                                         | Haiku 4.5   | Haiku 4.5 (thinking, 32k `max_tokens`) | Sonnet 4.6  | Sonnet 4.6 (thinking, 32k `max_tokens`) | Opus 5 (thinking disabled)         | Opus 5 (adaptive thinking, 32k `max_tokens`) | 
-|-------------------------------------------------------------------------|-------------|----------------------------------------|-------------|-----------------------------------------|------------------------------------|----------------------------------------------|
-| Verdict + refutation accuracy (overall)                                 | 14.4%       | 20.4%                                  | 21.6%       | 16.4%                                   | 31.2%                              | **34.8%**                                    |
-| - blunder arm / best arm                                                | 10.5% / 30% | 13.5% / 48%                            | 13.5% / 54% | 10.5% / 40%                             | 21.5% / **70.0%**                  | **28.0%** / 62.0%                            |
-| Blunder class - recall (caught real blunders)                           | **88.5%**   | 73.0%                                  | **88.5%**   | 37.5%                                   | 34.5%                              | 38.0%                                        |
-| Blunder class - precision (calls that were right)                       | 83.5%       | 84.9%                                  | 88.5%       | 89.3%                                   | **90.8%**                          | 84.4%                                        |
-| Best class - recall (endorsed real best moves)                          | 30.0%       | 48.0%                                  | 54.0%       | 40.0%                                   | **70.0%**                          | 62.0%                                        |
-| Best class - precision (endorsements right)                             | 39.5%       | 30.8%                                  | **54.0%**   | 38.5%                                   | 28.5%                              | 24.8%                                        |
-| Substantiation (correct blunder calls backing the certified refutation) | 11.9%       | 18.5%                                  | 15.3%       | 28.0%                                   | 62.3%                              | **73.7%**                                    |
-| Unplayable refutations (illegal, invalid or ambiguous)                  | 88/200      | 46/200                                 | 39/200      | 11/200                                  | **2/200**                          | 5/200                                        |
-| Legal `BEST_MOVE` suggestions                                           | 47.2%       | 70%                                    | 72%         | 44% (80.9% of answered)                 | 72.4%                              | **82.8%**                                    |
-| Unfinished samples (stop reason not `stop`)                             | **0**       | **0**                                  | **0**       | 115/250                                 | 29/250                             | 37/250                                       |
-| Empty outputs (whole budget spent thinking)                             | **0**       | **0**                                  | **0**       | 113/250 (45%)                           | **0**                              | 35/250 (14%)                                 |
-| Format failures (non-empty parse errors)                                | **0**       | **0**                                  | **0**       | 1                                       | 59/250 (23.6%, no thinking column) | **0**                                        |
-| Measured cost (full run)                                                | **~$1.02**  | ~$9.73                                 | ~$4.70      | ~$110.28                                | ~$99.75                            | ~$109.52                                     |
+|                                                                                                | Haiku 4.5          | Haiku 4.5 (thinking, 32k `max_tokens`) | Sonnet 4.6          | Sonnet 4.6 (thinking, 32k `max_tokens`) | Opus 5 (thinking disabled)         | Opus 5 (adaptive thinking, 32k `max_tokens`) | 
+|------------------------------------------------------------------------------------------------|--------------------|----------------------------------------|---------------------|-----------------------------------------|------------------------------------|----------------------------------------------|
+| Verdict + refutation accuracy (overall)                                                        | 14.4%              | 20.4%                                  | 21.6%               | 16.4%                                   | 31.2%                              | **34.8%**                                    |
+| - blunder arm / best arm                                                                       | 10.5% / 30%        | 13.5% / 48%                            | 13.5% / 54%         | 10.5% / 40%                             | 21.5% / **70.0%**                  | **28.0%** / 62.0%                            |
+| Blunder class - recall (caught real blunders)                                                  | **88.5%**          | 73.0%                                  | **88.5%**           | 37.5%                                   | 34.5%                              | 38.0%                                        |
+| Blunder class - precision (calls that were right)                                              | 83.5%              | 84.9%                                  | 88.5%               | 89.3%                                   | **90.8%**                          | 84.4%                                        |
+| Best class - recall (endorsed real best moves)                                                 | 30.0%              | 48.0%                                  | 54.0%               | 40.0%                                   | **70.0%**                          | 62.0%                                        |
+| Best class - precision (endorsements right)                                                    | 39.5%              | 30.8%                                  | **54.0%**           | 38.5%                                   | 28.5%                              | 24.8%                                        |
+| Best class - mean damage of suggested "improvements" (excludes correct endorsements)           | 67.4pp (n=17)      | 61.6pp (n=16)                          | 72.7pp (n=13)       | 71.7pp (n=8)                            | **59.9pp** (n=5)                   | 64.2pp (n=12)                                |              
+| Substantiation (correct blunder calls backing the certified refutation)                        | 11.9%              | 18.5%                                  | 15.3%               | 28.0%                                   | 62.3%                              | **73.7%**                                    |
+| Unplayable refutations (illegal, invalid or ambiguous)                                         | 88/200             | 46/200                                 | 39/200              | 11/200                                  | **2/200**                          | 5/200                                        |
+| Legal `BEST_MOVE` suggestions                                                                  | 47.2%              | 70%                                    | 72%                 | 44% (80.9% of answered)                 | 72.4%                              | **82.8%**                                    |
+| Suggested improvement damage (blunder arm, excludes rows where the model repeated the blunder) | 38.6pp (21%, n=63) | 41.6pp (17%, n=81)                     | 38.5pp (20%, n=117) | 31.1pp (34%, n=50)                      | **13.1pp (66%, n=56)**             | 20.3pp (56%, n=70)                           |
+| Unfinished samples (stop reason not `stop`)                                                    | **0**              | **0**                                  | **0**               | 115/250                                 | 29/250                             | 37/250                                       |
+| Empty outputs (whole budget spent thinking)                                                    | **0**              | **0**                                  | **0**               | 113/250 (45%)                           | **0**                              | 35/250 (14%)                                 |
+| Format failures (non-empty parse errors)                                                       | **0**              | **0**                                  | **0**               | 1                                       | 59/250 (23.6%, no thinking column) | **0**                                        |
+| Measured cost (full run)                                                                       | **~$1.02**         | ~$9.73                                 | ~$4.70              | ~$110.28                                | ~$99.75                            | ~$109.52                                     |
+
+Damage (produced by [grade_logs.py](scripts/grade_logs.py)) is defined as the Lichess win% a move gives away versus the
+best move; 0pp is engine-perfect, <=5pp is
+within [Stockfish's noise floor](https://chess.stackexchange.com/questions/38860/for-fixed-depth-search-how-much-is-the-efficiency-different-between-odd-and-eve),
+~47.5pp is an even game thrown into a forced mate, larger values would be the difference from the win% the best move
+would have given them. Damage cell notation is `mean (share of suggestions within 5pp of best, n graded)`.
 
 After switching to UCI, notation caused nearly every metric to drop for Haiku (substantiation was flat: 11.8% to 11.9%).
 Sonnet saw an increase to most of its metrics, most noticeably best-class precision (+17pp) & recall (+22pp), and the

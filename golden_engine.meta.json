@@ -1,0 +1,122 @@
+{
+  "engine": {
+    "name": "Stockfish 18",
+    "path": "/opt/homebrew/bin/stockfish",
+    "limit": "Limit(nodes=1000000)",
+    "config": {
+      "Threads": 1,
+      "Hash": 128
+    }
+  },
+  "generated": "2026-08-24",
+  "input": "golden_candidates.csv",
+  "input_sha256": "7fb13e226f93250275ffcc00844e965e0350529606dcab26f8133849da0f5132",
+  "rows": 250,
+  "limit": null,
+  "columns": "Scores are centipawns from the side to move's perspective in that position; forced mates are stored as +-10000 with the true distance in the MateIn column (0 = already mated). Empty BestMove = terminal position; empty AfterRefutation cells = best-arm row (not analysed).",
+  "thresholds": {
+    "already_lost_before": "before mate_in < 0 (forced mate regardless of move played)",
+    "weak_swing_pp": 30.0,
+    "provenance": "generator's advantage-path setup gate is win_chances +0.6; solution uniqueness is +0.7; mate-path puzzles have no setup gate"
+  },
+  "audit": {
+    "best_arm_disagreements": {
+      "count": 0,
+      "rows": []
+    },
+    "already_lost_before": {
+      "count": 4,
+      "rows": [
+        {
+          "puzzle_id": "f16cc",
+          "before_mate_in": -1,
+          "damage_pp": 0.0
+        },
+        {
+          "puzzle_id": "2NC6V",
+          "before_mate_in": -1,
+          "damage_pp": 0.0
+        },
+        {
+          "puzzle_id": "Nx8fl",
+          "before_mate_in": -3,
+          "damage_pp": 0.0
+        },
+        {
+          "puzzle_id": "FHpic",
+          "before_mate_in": -1,
+          "damage_pp": 0.0
+        }
+      ]
+    },
+    "weak_swing": {
+      "count": 10,
+      "rows": [
+        {
+          "puzzle_id": "Wj3vh",
+          "before_cp": -773,
+          "before_win_pct": 5.5,
+          "damage_pp": 3.0
+        },
+        {
+          "puzzle_id": "ayDnJ",
+          "before_cp": -653,
+          "before_win_pct": 8.3,
+          "damage_pp": 5.8
+        },
+        {
+          "puzzle_id": "mP0AX",
+          "before_cp": -260,
+          "before_win_pct": 27.7,
+          "damage_pp": 25.3
+        },
+        {
+          "puzzle_id": "sBbht",
+          "before_cp": -238,
+          "before_win_pct": 29.4,
+          "damage_pp": 26.9
+        },
+        {
+          "puzzle_id": "fMkW1",
+          "before_cp": -393,
+          "before_win_pct": 19.0,
+          "damage_pp": 16.6
+        },
+        {
+          "puzzle_id": "dIl9e",
+          "before_cp": 29,
+          "before_win_pct": 52.7,
+          "damage_pp": 27.9
+        },
+        {
+          "puzzle_id": "Ih8vK",
+          "before_cp": -83,
+          "before_win_pct": 42.4,
+          "damage_pp": 27.7
+        },
+        {
+          "puzzle_id": "RjXv7",
+          "before_cp": 0,
+          "before_win_pct": 50.0,
+          "damage_pp": 21.4
+        },
+        {
+          "puzzle_id": "hRrkU",
+          "before_cp": -48,
+          "before_win_pct": 45.6,
+          "damage_pp": 27.4
+        },
+        {
+          "puzzle_id": "2Cnir",
+          "before_cp": -8,
+          "before_win_pct": 49.3,
+          "damage_pp": 29.4
+        }
+      ]
+    },
+    "refutation_disagreements": {
+      "count": 0,
+      "rows": []
+    }
+  }
+}

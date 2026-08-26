@@ -42,6 +42,17 @@ def win_percent(score_cp: int) -> float:
     return 50 + 50 * (2 / (1 + math.exp(-0.00368208 * clamped)) - 1)
 
 
+def move_damage_pp(before_cp: int, after_cp: int) -> float:
+    """Win% a move gave away, from the mover's perspective.
+
+    before_cp is the mover's view of the position; after_cp is the score of
+    the position after the move - the OPPONENT'S view (side to move flipped) -
+    hence the 100-minus. Shared by the certify and grading scripts so the
+    harness has exactly one statement of its core metric.
+    """
+    return win_percent(before_cp) - (100 - win_percent(after_cp))
+
+
 @dataclass(frozen=True)
 class EngineEval:
     """Engine verdict on one position, from the side to move's perspective.

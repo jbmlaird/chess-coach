@@ -95,3 +95,15 @@ def test_engine_reports_provenance(engine):
     assert prov["config"] == GRADER_CONFIG
     assert f"nodes={GRADER_NODES}" in prov["limit"]
     assert prov["path"] == STOCKFISH_PATH
+
+
+def test_move_damage_pp():
+    from engine import move_damage_pp
+    # an even position where the move hands the opponent an even position: no damage
+    assert move_damage_pp(0, 0) == pytest.approx(0)
+    # perfect play preserves the eval: before +300 (my view) -> after -300 (their view)
+    assert move_damage_pp(300, -300) == pytest.approx(0)
+    # blundering mate away: before winning +773... e.g. Wj3vh-style collapse
+    assert move_damage_pp(-773, MATE_SCORE_CP) == pytest.approx(3.0, abs=0.1)
+    # from equal to mated: the full price of an equal-position blunder
+    assert move_damage_pp(0, MATE_SCORE_CP) == pytest.approx(47.5, abs=0.1)
