@@ -162,7 +162,8 @@ This isn't exclusive to thinking models, either. Opus 5 with no thinking also ha
 into a hole was done in the prose returned rather than in a separate reasoning section.
 
 Compared with Opus, Sonnet 4.6 with no thinking performed the best with all samples finishing, and reasonable metrics at
-5% of the cost of Opus. The question remaining is, do these models perform at a similar level once they're grounded?
+5% of the cost of Opus. The question remaining is, do these inferior models perform at a similar level
+to the frontier models once they're grounded?
 
 ## motif_detector.py: an independent cross-check
 
