@@ -4,6 +4,9 @@ Engine-backed tests need a Stockfish binary. Assertions avoid anything version-s
 cross-check, where any strong engine agrees (f8a3 is the unique mate; the second-best move is half a pawn worse).
 """
 
+import json
+from pathlib import Path
+
 import chess
 import pytest
 
@@ -11,8 +14,6 @@ from engine import (
     CP_CEILING,
     Engine,
     EngineEval,
-    GRADER_CONFIG,
-    GRADER_NODES,
     MATE_SCORE_CP,
     STOCKFISH_PATH,
     win_percent,
@@ -89,14 +90,6 @@ def test_win_percent_shape():
     assert EngineEval("e2e4", 300, None, ["e2e4"]).win_percent == win_percent(300)
 
 
-def test_engine_reports_provenance(engine):
-    assert "Stockfish" in engine.name
-    prov = engine.provenance
-    assert prov["config"] == GRADER_CONFIG
-    assert f"nodes={GRADER_NODES}" in prov["limit"]
-    assert prov["path"] == STOCKFISH_PATH
-
-
 def test_move_damage_pp():
     from engine import move_damage_pp
     # an even position where the move hands the opponent an even position: no damage
@@ -107,3 +100,9 @@ def test_move_damage_pp():
     assert move_damage_pp(-773, MATE_SCORE_CP) == pytest.approx(3.0, abs=0.1)
     # from equal to mated: the full price of an equal-position blunder
     assert move_damage_pp(0, MATE_SCORE_CP) == pytest.approx(47.5, abs=0.1)
+
+
+def test_grader_is_the_instrument_that_certified_the_golden_set(engine):
+    # the MCP tool runs Engine.grader() too: oracle == ruler == frozen reference
+    meta = json.loads((Path(__file__).parent.parent / "golden_engine.meta.json").read_text())
+    assert engine.provenance == {**meta["engine"], "path": STOCKFISH_PATH}

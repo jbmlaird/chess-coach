@@ -1,4 +1,4 @@
-"""Shared Stockfish access for the grader and (later) the model-facing tool.
+"""Shared Stockfish access for the grader and the model-facing MCP tool.
 
 Scores are always reported from the perspective of the side to move in the
 analysed position; callers comparing before/after a move must flip the sign
@@ -57,7 +57,7 @@ def move_damage_pp(before_cp: int, after_cp: int) -> float:
 class EngineEval:
     """Engine verdict on one position, from the side to move's perspective.
 
-    On terminal positions (checkmate/stalemate/dead draw) there is no move to
+    On terminal positions (checkmate/stalemate) there is no move to
     make: best_move is None and pv is empty, with score_cp/mate_in carrying
     the terminal verdict (mated -> -MATE_SCORE_CP with mate_in=0, drawn -> 0).
     """
@@ -108,6 +108,7 @@ class Engine:
                 "limit": repr(self.limit), "config": self.config}
 
     def analyse(self, board: chess.Board) -> EngineEval:
+        """Verdict on a valid position (board.is_valid()): Stockfish aborts on e.g. a kingless board."""
         # A fresh game token per call forces ucinewgame
         info = self._engine.analyse(board, self.limit, game=object())
         pov_score = info["score"].pov(board.turn)
