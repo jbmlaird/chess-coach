@@ -6,8 +6,9 @@ from committed artifacts by a script.
 
 ## Chess reasoning: use the engine, never your head
 
-All chess analysis goes through the engine - the Stockfish MCP tool once it
-exists, `engine.py` until then (`uv run python`, `Engine.grader()`):
+All chess analysis goes through the engine - the Stockfish MCP tool
+(`stockfish_mcp.py`, registered in `.mcp.json`) or `engine.py` directly
+(`uv run python`, `Engine.grader()`):
 
 - Never predict best moves, evaluate positions, count mate distances, or
   judge move legality by hand. Hand analysis in this repo's history produced
@@ -56,8 +57,10 @@ censored pilot turned a "$53" Opus run into $109.52.
   rejected: chess prose is full of square names that parse as moves).
 - Engine analyses for measurement use `Engine.grader()` (Threads=1, fixed
   nodes, fresh `ucinewgame` per call — results are byte-reproducible). The
-  future model-facing tool gets its own preset; grader settings never change
-  to suit the tool. Record `engine.provenance` in every meta sidecar.
+  model-facing MCP tool runs the same `Engine.grader()` preset (a test pins
+  the local binary to `golden_engine.meta.json`); tool-arm runs record the
+  tool's `engine.provenance` in their sidecar like any other engine run. A
+  weaker tool, if ever wanted, gets a new preset — the grader never changes.
 - Damage/quality aggregation happens in win% space (Lichess model, ±1000cp
   clamp), never by averaging raw centipawns (±10000 mate sentinel).
 

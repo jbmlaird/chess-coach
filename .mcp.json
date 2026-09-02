@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "stockfish": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "stockfish_mcp.py"
+      ]
+    }
+  }
+}
