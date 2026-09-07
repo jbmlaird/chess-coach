@@ -1,0 +1,55 @@
+{
+  "generated": "2026-09-05",
+  "seed": 40,
+  "puzzles": "post_cutoff_puzzles.csv",
+  "puzzles_size": 2925615,
+  "themes": "post_cutoff_themes.csv",
+  "themes_size": 517732,
+  "blunder_arm": 200,
+  "best_arm": 50,
+  "grid": "10 categories x 4 bands x 5 (blunder); 10 categories x 5 round-robin bands (best)",
+  "columns": "PlayedMove is UCI in FEN's position; Continuation is the engine line after PlayedMove, space-separated UCI; Category/Band are sampling strata baked at generation",
+  "review": "all 250 rows hand-reviewed, recorded in the Review column (grammar: 'ok' or 'ok: <note>'): 237 bare ok, 13 with notes, 0 rejections. 245 rows carry their golden v1 marks unchanged; the 5 replacement rows were reviewed 2026-09-05. Review is the only column not regenerable from the seed, sources and the engine rule",
+  "frozen": "2026-09-05 as golden v2: golden v1 with 5 blunder rows replaced under the noise-floor rule (see replaced); 250 rows final",
+  "csv_sha256": "6df1c8aacb5999ce966709c1ffe3562f3ad60e3a111498598213eb3046515b08",
+  "rating_caveat": "post-cutoff ratings are provisional; median RatingDeviation of the selection is 110, 149/250 over 100",
+  "supersedes": {
+    "golden": "golden/v1/golden_candidates.csv",
+    "csv_sha256": "7fb13e226f93250275ffcc00844e965e0350529606dcab26f8133849da0f5132"
+  },
+  "replaced": {
+    "rule": "blunder rows: not already in a forced mate before the played move, and the move gives away more than 5 win% (engine noise floor)",
+    "removed": [
+      "f16cc",
+      "2NC6V",
+      "Nx8fl",
+      "FHpic",
+      "Wj3vh"
+    ],
+    "added": [
+      "WmRuu",
+      "DDrC0",
+      "xmHxa",
+      "ZaVDg",
+      "CgxAk"
+    ],
+    "rejected": [
+      {
+        "puzzle_id": "idqhg",
+        "reason": "already lost: mated in 2 before the move"
+      },
+      {
+        "puzzle_id": "4xePY",
+        "reason": "damage 1.9pp is within the noise floor"
+      },
+      {
+        "puzzle_id": "Jyb5h",
+        "reason": "already lost: mated in 1 before the move"
+      },
+      {
+        "puzzle_id": "QWAh1",
+        "reason": "already lost: mated in 1 before the move"
+      }
+    ]
+  }
+}

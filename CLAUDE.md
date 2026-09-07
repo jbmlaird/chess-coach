@@ -21,9 +21,15 @@ All chess analysis goes through the engine - the Stockfish MCP tool
 
 ## Frozen artifacts — never edit in place
 
-- `golden_candidates.csv` — sha256-frozen (hash in `golden_candidates.meta.json`)
-- `golden_engine.csv` + meta — certified reference evals; regenerating is a
-  deliberate re-certification event, not a fix
+- `golden/vN/golden_candidates.csv` — sha256-frozen (hash in its own
+  `golden_candidates.meta.json`). Versions are never edited or deleted: a log
+  records the dataset path it ran on (logs from before `golden/` was versioned
+  say `golden_candidates.csv`, which is v1) and regrades with
+  `--golden golden/vN/golden_engine.csv`
+- `golden/vN/golden_engine.csv` + meta — certified reference evals;
+  regenerating is a deliberate re-certification event, not a fix
+- Replacing rows means a new `golden/vN/` via `sample_golden.py --replace`
+  (blunder rows must clear `NOISE_FLOOR_PP`), never an edit to an existing one
 - `logs/**/*.eval` — committed runs backing published tables
 - `vendor/lichess_puzzler/` — byte-identical to the pinned upstream commit
 
@@ -58,9 +64,10 @@ censored pilot turned a "$53" Opus run into $109.52.
 - Engine analyses for measurement use `Engine.grader()` (Threads=1, fixed
   nodes, fresh `ucinewgame` per call — results are byte-reproducible). The
   model-facing MCP tool runs the same `Engine.grader()` preset (a test pins
-  the local binary to `golden_engine.meta.json`); tool-arm runs record the
-  tool's `engine.provenance` in their sidecar like any other engine run. A
-  weaker tool, if ever wanted, gets a new preset — the grader never changes.
+  the grader's provenance to every `golden/*/golden_engine.meta.json`);
+  tool-arm runs record the tool's `engine.provenance` in their sidecar like
+  any other engine run. A weaker tool, if ever wanted, gets a new preset -
+  the grader never changes.
 - Damage/quality aggregation happens in win% space (Lichess model, ±1000cp
   clamp), never by averaging raw centipawns (±10000 mate sentinel).
 

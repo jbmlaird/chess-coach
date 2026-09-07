@@ -28,6 +28,11 @@ MATE_SCORE_CP = 10_000
 
 GRADER_CONFIG: chess.engine.ConfigMapping = {"Threads": 1, "Hash": 128}
 GRADER_NODES = 1_000_000
+# The measured engine-noise floor: repeat-best sidecar damage spans -7.6..+4.8pp
+# across two independent 1M-node searches, and 5pp sits below Lichess's 10pp
+# "inaccuracy" band. A move within it is indistinguishable from best play, and
+# a golden blunder row must clear it (scripts/sample_golden.py).
+NOISE_FLOOR_PP = 5.0
 
 
 def win_percent(score_cp: int) -> float:

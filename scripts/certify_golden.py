@@ -58,7 +58,7 @@ import chess
 
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
-from engine import Engine, EngineEval  # noqa: E402
+from engine import Engine, EngineEval, move_damage_pp  # noqa: E402
 
 BLUNDER_SWING_THRESHOLD_PP = 30.0
 
@@ -81,28 +81,23 @@ def eval_columns(prefix: str, verdict: EngineEval | None) -> dict[str, str]:
     }
 
 
-def played_move_damage_pp(before: EngineEval, after_played: EngineEval) -> float:
-    """Win% the played move gave away, from the player's perspective."""
-    return before.win_percent - (100 - after_played.win_percent)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--golden", type=Path, default=REPO / "golden_candidates.csv")
-    parser.add_argument("--output", type=Path, default=REPO / "golden_engine.csv")
+    parser.add_argument("--golden", type=Path, default=REPO / "golden" / "v2" / "golden_candidates.csv")
+    parser.add_argument("--output", type=Path, help="defaults to golden_engine.csv beside --golden")
     parser.add_argument("--limit", type=int, default=None,
-                        help="only analyse the first N rows (smoke testing; "
-                             "requires a non-default --output)")
+                        help="only analyse the first N rows (smoke testing; requires --output)")
     args = parser.parse_args()
 
     if args.limit is not None:
         if args.limit <= 0:
             sys.exit(f"--limit must be positive, got {args.limit}")
-        if args.output == REPO / "golden_engine.csv":
-            sys.exit("--limit runs must use a non-default --output: the default "
+        if args.output is None:
+            sys.exit("--limit runs must pass --output: the default "
                      "path is the frozen reference and a partial file must never "
                      "land there")
+    args.output = args.output or args.golden.with_name("golden_engine.csv")
     meta_path = args.output.with_suffix(".meta.json")
     for frozen in (args.output, meta_path):
         if frozen.exists():
@@ -112,11 +107,9 @@ def main() -> None:
     golden_bytes = args.golden.read_bytes()
     input_sha256 = hashlib.sha256(golden_bytes).hexdigest()
     golden_meta_file = args.golden.parent / "golden_candidates.meta.json"
-    if golden_meta_file.exists():
-        frozen_sha = json.loads(golden_meta_file.read_text()).get("csv_sha256")
-        if frozen_sha and frozen_sha != input_sha256:
-            sys.exit(f"{args.golden} does not match the frozen csv_sha256 in "
-                     f"{golden_meta_file.name} - refusing to certify drifted bytes")
+    if json.loads(golden_meta_file.read_text()).get("csv_sha256") != input_sha256:
+        sys.exit(f"{args.golden} is not frozen at its current sha256 in {golden_meta_file.name} "
+                 f"- review and stamp csv_sha256 first; refusing to certify unfrozen or drifted bytes")
 
     rows = list(csv.DictReader(golden_bytes.decode().splitlines()))
     if not rows:
@@ -157,7 +150,7 @@ def main() -> None:
                         # the generator allows multiple mates on the final move
                         "alternate_mate": after_played.mate_in == 1,
                     })
-                damage = played_move_damage_pp(before, after_played)
+                damage = move_damage_pp(before.score_centipawns, after_played.score_centipawns)
                 if before.mate_in is not None and before.mate_in < 0:
                     already_lost_before.append({
                         "puzzle_id": row["PuzzleId"],

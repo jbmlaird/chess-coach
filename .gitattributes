@@ -1,0 +1,2 @@
+# frozen csv artifacts are sha256-stamped; never let git rewrite their line endings
+*.csv -text

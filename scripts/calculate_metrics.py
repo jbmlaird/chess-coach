@@ -21,7 +21,7 @@ from move_review import (  # noqa: E402
     WRONG_VERDICT,
 )
 
-GOLDEN_META = json.loads((REPO / "golden_candidates.meta.json").read_text())
+GOLDEN_META = json.loads((REPO / "golden" / "v2" / "golden_candidates.meta.json").read_text())
 ARM_SIZES = {"blunder": GOLDEN_META["blunder_arm"], "best": GOLDEN_META["best_arm"]}
 
 PRICES = {
