@@ -1,6 +1,6 @@
 """Tests for the shared engine wrapper.
 
-Engine-backed tests need a Stockfish binary. Assertions avoid anything version-sensitive except the one golden
+Engine-backed tests need a Stockfish binary. Assertions avoid anything version-sensitive except the one golden v1
 cross-check, where any strong engine agrees (f8a3 is the unique mate; the second-best move is half a pawn worse).
 """
 
@@ -29,7 +29,7 @@ def engine():
 
 
 def test_finds_certified_refutation_on_golden_row(engine):
-    # Wj3vh after the blunder Qxc4??: the certified refutation is Qa3+ (f8a3)
+    # golden v1 row Wj3vh after the blunder Qxc4??: the certified refutation is Qa3+ (f8a3)
     board = chess.Board("r4q1k/6pp/1p3n2/5N2/P1b2P2/1Q2P2P/K5P1/2bR2R1 w - - 0 31")
     board.push_uci("b3c4")
     verdict = engine.analyse(board)
@@ -48,7 +48,7 @@ def test_score_is_side_to_move_relative(engine):
 
 
 def test_checkmated_position_is_a_terminal_verdict(engine):
-    # golden row f16cc after blunder and the certified mating reply Qxg7#:
+    # golden v1 row f16cc after blunder and the certified mating reply Qxg7#:
     # the grader analyses this exact shape whenever a model answers perfectly
     board = chess.Board("r1b2rk1/ppqn1pbp/3p3B/2p3Qp/3pP3/5P2/PPP1N1P1/2KR1BN1 b - - 1 14")
     board.push_uci("c7d8")
@@ -102,7 +102,9 @@ def test_move_damage_pp():
     assert move_damage_pp(0, MATE_SCORE_CP) == pytest.approx(47.5, abs=0.1)
 
 
-def test_grader_is_the_instrument_that_certified_the_golden_set(engine):
+@pytest.mark.parametrize("meta_path", sorted((Path(__file__).parent.parent / "golden").glob("*/golden_engine.meta.json")),
+                         ids=lambda p: p.parent.name)
+def test_grader_is_the_instrument_that_certified_the_golden_set(engine, meta_path):
     # the MCP tool runs Engine.grader() too: oracle == ruler == frozen reference
-    meta = json.loads((Path(__file__).parent.parent / "golden_engine.meta.json").read_text())
+    meta = json.loads(meta_path.read_text())
     assert engine.provenance == {**meta["engine"], "path": STOCKFISH_PATH}

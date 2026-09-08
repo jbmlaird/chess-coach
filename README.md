@@ -29,7 +29,7 @@ which I've vendored to tag the outstanding puzzles, rather than handroll myself.
 [tag_post_cutoff.py](/scripts/tag_post_cutoff.py) runs it over every post-cutoff puzzle and writes the labels to a
 sidecar [post_cutoff_themes.csv](/post_cutoff_themes.csv).
 
-A golden dataset of 250 puzzles was sampled and written to `golden_candidates.csv`. This has a mixture of themes (such
+A golden dataset of 250 puzzles was sampled and written to `golden/v1/golden_candidates.csv`. This has a mixture of themes (such
 as `fork`, `skewer`, `pin`, `attraction`, `deflection` etc.) at a variety of rating levels to have a varied dataset. 200
 of the puzzles play moves that are blunders, 50 puzzles where the best move was played. This dataset was automatically
 tagged by the vendored `lichess_puzzler` and verified myself by hand. 250 rows had correct tags. Of those 250, 7 felt
@@ -55,7 +55,7 @@ as if they were missing tags:
 
 Before grading anything against Stockfish, I certified the dataset itself:
 [certify_golden.py](scripts/certify_golden.py) runs a pinned engine (Stockfish 18, 1M nodes/position) over every golden
-row and freezes the reference evals in [golden_engine.csv](golden_engine.csv). The engine verified the labels almost
+row and freezes the reference evals in [golden_engine.csv](golden/v1/golden_engine.csv). The engine verified the labels almost
 completely: on all 50 best-arm rows its best move _is_ the played move, and on all 200 blunder rows its best reply _is_
 the certified refutation
 
@@ -65,6 +65,19 @@ gate only applies to advantage puzzles; mate puzzles certify the mating line wit
 savable. A model answering `best` on those rows is engine-correct but scored wrong (at most ~2pp effect on blunder-arm
 accuracy, and since every model over-calls `blunder`, these rows mildly reward that bias). These 4 puzzles should be
 replaced when selecting a new dataset.
+
+### Golden v2
+
+Those four rows were replaced, plus a fifth, under the rule the v1 audit made obvious: a blunder row's certified damage
+must exceed the 5pp engine noise floor (the same bar [grade_logs.py](scripts/grade_logs.py) uses for "within noise of
+best"). The four already-lost rows have 0pp by definition, and `Wj3vh` (3.0pp: a lost position made lost faster) fails
+it too. Each was redrawn from its own category x band cell by [sample_golden.py](scripts/sample_golden.py) `--replace`,
+which engine-checks every draw: 4 of the 9 candidates it tried were rejected for the same two reasons (three already
+mated, one at 1.9pp), so the rule is not cosmetic. Removed: f16cc, 2NC6V, Nx8fl, FHpic, Wj3vh. Added: WmRuu, DDrC0,
+xmHxa, ZaVDg, CgxAk (all `mate`, bands <1200 and 1200-1599). Both sets live under `golden/v1/` and `golden/v2/` with
+their own certification, so every earlier table still regenerates against v1, and [test_golden.py](tests/test_golden.py)
+pins that v2 differs from v1 by exactly these rows, that the 245 shared rows certify byte-identically, and that every
+blunder row clears the floor.
 
 ## Results
 
@@ -133,7 +146,8 @@ Damage (produced by [grade_logs.py](scripts/grade_logs.py)) is defined as the Li
 best move; 0pp is engine-perfect, <=5pp is
 within [Stockfish's noise floor](https://chess.stackexchange.com/questions/38860/for-fixed-depth-search-how-much-is-the-efficiency-different-between-odd-and-eve),
 ~47.5pp is an even game thrown into a forced mate, larger values would be the difference from the win% the best move
-would have given them. Damage cell notation is `mean (share of suggestions within 5pp of best, n graded)`.
+would have given them. Damage cell notation is `mean (share of suggestions within 5pp of best, n graded)`. Every table above ran on golden v1
+and regrades with `--golden golden/v1/golden_engine.csv`.
 
 After switching to UCI, notation caused nearly every metric to drop for Haiku (substantiation was flat: 11.8% to 11.9%).
 Sonnet saw an increase to most of its metrics, most noticeably best-class precision (+17pp) & recall (+22pp), and the

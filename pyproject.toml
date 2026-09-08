@@ -18,4 +18,5 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = [".", "scripts"]
+empty_parameter_set_mark = "fail_at_collect"

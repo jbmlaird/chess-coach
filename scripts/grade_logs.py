@@ -13,7 +13,9 @@ The cache records the engine provenance it was built with and the script
 refuses to mix instruments.
 
 Usage:
-    uv run python scripts/grade_logs.py --log_file logs/opus-5/<file>.eval
+    uv run python scripts/grade_logs.py --log_file logs/<model>-tool-required/<file>.eval
+    uv run python scripts/grade_logs.py --log_file logs/opus-5/<file>.eval --golden golden/v1/golden_engine.csv
+(logs from before golden/ was versioned ran on v1; the default reference is the current version)
 """
 
 import argparse
@@ -29,25 +31,22 @@ from inspect_ai.log import read_eval_log
 
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
-from engine import Engine, move_damage_pp, win_percent  # noqa: E402
+from engine import NOISE_FLOOR_PP, Engine, move_damage_pp, win_percent  # noqa: E402
 from move_parser import Outcome, parse_move_field  # noqa: E402
 from move_review import WRONG_REFUTATION  # noqa: E402
 
 CACHE_PATH = REPO / "graded_moves_cache.csv"
-# 5pp is the measured engine-noise floor (repeat-best sidecar damage spans
-# -7.6..+4.8pp) and sits below Lichess's 10pp "inaccuracy" band - a graded
-# move under this bar is indistinguishable from best play by this instrument.
-GOOD_SUGGESTION_THRESHOLD_PP = 5.0
 # +230cp retained. Empirically never reached: the max observed retention on a
 # wrong refutation is ~50% - the line reporting this is an honest null.
 STILL_WINNING_THRESHOLD_PCT = 70.0
 
 
 def load_reference(golden: Path) -> tuple[dict[str, dict], set[str]]:
-    meta = json.loads(golden.with_suffix(".meta.json").read_text())
-    candidates_meta = json.loads((REPO / "golden_candidates.meta.json").read_text())
+    meta_path = golden.with_suffix(".meta.json")
+    meta = json.loads(meta_path.read_text())
+    candidates_meta = json.loads((golden.parent / "golden_candidates.meta.json").read_text())
     if meta["input_sha256"] != candidates_meta["csv_sha256"]:
-        sys.exit(f"{golden_meta.name} certifies input {meta['input_sha256'][:12]}... but "
+        sys.exit(f"{meta_path.name} certifies input {meta['input_sha256'][:12]}... but "
                  f"golden_candidates.meta.json froze {candidates_meta['csv_sha256'][:12]}... "
                  f"- the reference does not describe this dataset")
 
@@ -92,7 +91,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--log_file", type=Path, required=True)
-    parser.add_argument("--golden", type=Path, default=REPO / "golden_engine.csv")
+    parser.add_argument("--golden", type=Path, default=REPO / "golden" / "v2" / "golden_engine.csv")
     return parser.parse_args()
 
 
@@ -135,6 +134,9 @@ def main() -> None:
     model = log.eval.model
     samples = log.samples or []
     assert len(samples) == 250, f"expected 250 samples, got {len(samples)}"
+    if missing := {str(s.id) for s in samples} - reference.keys():
+        sys.exit(f"{len(missing)} sample ids (e.g. {sorted(missing)[:3]}) are not in golden {args.golden.parent.name} "
+                 f"- pass --golden for the set this log ran on")
 
     stats = {"cache_hits": 0, "sidecar_hits": 0, "live_analyses": 0}
     # damage split by (arm, endorsed): endorsed = the model repeated the played
@@ -194,29 +196,29 @@ def main() -> None:
                     still_winning += 1
 
     arm_sizes = Counter(row["Arm"] for row in reference.values())
-    report(model, damages, damages_excl_already_lost, ungraded,
+    report(model, args.golden, damages, damages_excl_already_lost, ungraded,
            refutation_deltas, still_winning, stats, dict(arm_sizes))
 
 
 def describe(damage_list: list[float]) -> str:
     if not damage_list:
         return "n=0"
-    good = sum(1 for d in damage_list if d <= GOOD_SUGGESTION_THRESHOLD_PP)
+    good = sum(1 for d in damage_list if d <= NOISE_FLOOR_PP)
     return (f"n={len(damage_list)} mean={statistics.fmean(damage_list):.1f}pp "
             f"median={statistics.median(damage_list):.1f}pp "
-            f"good(<={GOOD_SUGGESTION_THRESHOLD_PP:g}pp)={good}/{len(damage_list)} "
+            f"good(<={NOISE_FLOOR_PP:g}pp)={good}/{len(damage_list)} "
             f"({100 * good / len(damage_list):.0f}%)")
 
 
-def report(model: str, damages: dict[tuple[str, bool], list[float]], damages_excl: list[float],
+def report(model: str, golden: Path, damages: dict[tuple[str, bool], list[float]], damages_excl: list[float],
            ungraded: Counter, refutation_deltas: list[float],
            still_winning: int, stats: dict, arm_sizes: dict[str, int]) -> None:
     blunder_all = damages[("blunder", True)] + damages[("blunder", False)]
     best_all = damages[("best", True)] + damages[("best", False)]
 
-    print(f"\n=== {model} vs golden v1 ===")
+    print(f"\n=== {model} vs golden {golden.parent.name} ===")
     print("damage = win% the suggested move gives away vs best play; 0 = engine-perfect,")
-    print(f"<= {GOOD_SUGGESTION_THRESHOLD_PP:g}pp = within engine noise of best, ~50pp = threw an even game\n")
+    print(f"<= {NOISE_FLOOR_PP:g}pp = within engine noise of best, ~50pp = threw an even game\n")
 
     total = sum(arm_sizes.values())
     print(f"{len(blunder_all) + len(best_all)} of {total} answers contained a legal BEST_MOVE and were graded")

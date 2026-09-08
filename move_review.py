@@ -1,9 +1,10 @@
 import chess
-from ground_truth_parser import Outcome as GroundTruthOutcome, parse_ground_truth
 from inspect_ai import task, Task
 from inspect_ai.dataset import FieldSpec, csv_dataset
 from inspect_ai.scorer import Score, scorer, accuracy, stderr, Target, CORRECT, INCORRECT, NOANSWER, grouped
 from inspect_ai.solver import TaskState, prompt_template, generate
+
+from ground_truth_parser import Outcome as GroundTruthOutcome, parse_ground_truth
 from move_parser import Outcome as MoveParserOutcome, parse_move_field
 
 METADATA_FIELDS = ["FEN", "PlayedMove", "GroundTruth", "Arm", "Category", "Band", "Rating", "Continuation"]
@@ -105,8 +106,9 @@ def ground_truth():
                          explanation=f"Blunder called without a usable refutation: {refutation.explanation}",
                          metadata={"outcome": refutation.outcome.name})
 
-        # Strict single-answer match. Known edge case, some positions may have multiple mating moves. Golden v1 has
-        # exactly one affected row (FHpic: h2g1q certified, h2g1r also mates)
+        # Strict single-answer match. Known edge case: a position can have more than one mating move; the
+        # certification audit only flags it when the engine prefers the other one (refutation_disagreements,
+        # alternate_mate), so a certified line can still have an unflagged twin.
         expected = state.metadata['Continuation'].split()[0]
         if refutation.uci == expected:
             return Score(value=CORRECT, answer=refutation.answer,
@@ -125,7 +127,7 @@ def positions() -> Task:
         name='Positions',
         version=2,
         dataset=csv_dataset(
-            'golden_candidates.csv',
+            'golden/v2/golden_candidates.csv',
             sample_fields=FieldSpec(
                 input="FEN",
                 id="PuzzleId",
