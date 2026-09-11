@@ -21,3 +21,6 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests
+
+      - name: Chart regenerates byte-for-byte
+        run: uv run python scripts/plot_results.py && git diff --exit-code charts/
