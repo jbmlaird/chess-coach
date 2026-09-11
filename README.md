@@ -24,25 +24,31 @@ answer is scored against Stockfish, never against the model's own chess judgemen
 
 ![Golden v2 baselines: blunder recall, best-move recall, substantiation and legal best-move rate for Haiku 4.5 and Sonnet 4.6](charts/golden-v2-baselines.svg)
 
-The chart is drawn by [plot_results.py](scripts/plot_results.py) from the same script lines the tables quote;
-`uv run python scripts/plot_results.py` regenerates it
+The chart is drawn by [plot_results.py](scripts/plot_results.py) from the same numbers the tables are rendered from;
+`uv run python scripts/plot_results.py` regenerates it byte-for-byte, and CI fails if the committed SVG differs.
 
 **How it's built**
 
 - Dataset: 250 Lichess puzzles played after the models' training cutoffs, stratified over 10 tactical motifs and 4
   rating bands, tagged by Lichess's own vendored tagger, hand-reviewed, then certified by a pinned Stockfish 18 and
-  frozen with a sha256 handshake (`golden/v2/`). Five rows the engine showed were not real blunders were replaced
-  under a stated rule and the whole set re-certified; both versions are kept so every old table still regenerates.
+  frozen with a sha256 handshake (`golden/v2/`). Five rows that failed the damage-floor rule (four already-lost
+  positions and one 3pp blunder) were replaced and the whole set re-certified; both versions are kept so every
+  old table still regenerates.
 - Harness: [Inspect AI](https://inspect.aisi.org.uk) task in [move_review.py](move_review.py) with two scorers,
   legality and ground truth, and a strict output contract. The prompt, parsers and scorers are the instrument; any
   change bumps `Task(version=N)` and starts a new results column.
 - Grading: [certify_golden.py](scripts/certify_golden.py) freezes the reference evals,
   [grade_logs.py](scripts/grade_logs.py) scores suggested moves in Lichess win-probability space,
-  [calculate_metrics.py](scripts/calculate_metrics.py) derives every table cell, and
-  [tests](tests/test_calculate_metrics.py) pin the published lines against the committed logs.
+  [calculate_metrics.py](scripts/calculate_metrics.py) derives every table cell,
+  [render_results.py](scripts/render_results.py) renders the tables below from those numbers, and
+  [tests](tests/test_render_results.py) fail if any row of a README table differs from the rendered one (the two damage
+  rows need the engine, so CI checks the rest).
 - Spend discipline: mock run, then an 8-sample paid pilot whose measured tokens project the full cost, then approval.
   Full runs cost $1 (Haiku) to $5 (Sonnet); the three thinking and frontier runs that cost $100-110 each are in the
   tables as the reason the protocol exists.
+
+**The open question:** do the cheaper models reach the frontier model's numbers once they are grounded in the
+engine? The next column will answer it: the same eval with a Stockfish tool the model can call.
 
 ## Background
 
@@ -130,23 +136,30 @@ blunder row clears the floor.
 
 ## Results
 
-### Baseline results (2026-08-18/19, golden v1, 250 rows, no tools)
+### Instrument v0 · golden v1 · no tools · SAN prompt (2026-08-18/19)
 
-|                                                                         | Haiku 4.5 | Sonnet 4.6 |
-|-------------------------------------------------------------------------|-----------|------------|
-| Verdict + refutation accuracy (overall)                                 | 18.4%     | 16.8%      |
-| - blunder arm / best arm                                                | 11% / 48% | 13% / 32%  |
-| Blunder class - recall (caught real blunders)                           | 93.0%     | 86.5%      |
-| Blunder class - precision (calls that were right)                       | 87.7%     | 83.6%      |
-| Best class - recall (endorsed real best moves)                          | 48.0%     | 32.0%      |
-| Best class - precision (endorsements right)                             | 63.2%     | 37.2%      |
-| Substantiation (correct blunder calls backing the certified refutation) | 11.8%     | 15.0%      |
-| Unplayable refutations (illegal, invalid or ambiguous)                  | 84/200    | 46/200     |
-| Legal `BEST_MOVE` suggestions                                           | 58%       | 69%        |
-| Measured cost (full run)                                                | ~$1.00    | ~$4.04     |
+|                                                                                                | Haiku 4.5          | Sonnet 4.6              |
+|------------------------------------------------------------------------------------------------|--------------------|-------------------------|
+| Verdict + refutation accuracy (overall)                                                        | **18.4%**          | 16.8%                   |
+| - blunder arm / best arm                                                                       | 11.0% / 48.0%      | 13.0% / 32.0%           |
+| Blunder class - recall (caught real blunders)                                                  | **93.0%**          | 86.5%                   |
+| Blunder class - precision (calls that were right)                                              | **87.7%**          | 83.6%                   |
+| Best class - recall (endorsed real best moves)                                                 | **48.0%**          | 32.0%                   |
+| Best class - precision (endorsements right)                                                    | **63.2%**          | 37.2%                   |
+| Best class - mean damage of suggested "improvements" (excludes correct endorsements)           | **62.0pp (n=14)**  | 64.3pp (n=24)           |
+| Substantiation (correct blunder calls backing the certified refutation)                        | 11.8%              | **15.0%**               |
+| Unplayable refutations (illegal, invalid or ambiguous)                                         | 84/200             | **46/200**              |
+| Legal `BEST_MOVE` suggestions                                                                  | 58.0%              | **68.8%**               |
+| Invalid `BEST_MOVE` answers (of which a lowercase piece letter)                                | **0/250 (0)**      | **0/250 (0)**           |
+| Suggested improvement damage (blunder arm, excludes rows where the model repeated the blunder) | 42.6pp (17%, n=93) | **38.3pp (20%, n=105)** |
+| Unfinished samples (stop reason not `stop`)                                                    | **0**              | **0**                   |
+| Empty outputs (whole budget spent thinking)                                                    | **0**              | **0**                   |
+| Format failures (non-empty parse errors)                                                       | **0**              | **0**                   |
+| Measured cost (full run)                                                                       | **~$1.00**         | ~$4.04                  |
 
 Logs for the golden v1 tables live in `logs/golden-v1/`, viewable with `uv run inspect view` from the root. The accuracy rows are pulled from the
-log metadata, the rest of the metrics are calculated via the [calculate_metrics](scripts/calculate_metrics.py) script.
+log metadata, the damage rows come from [grade_logs.py](scripts/grade_logs.py) (defined below the next table), and the
+rest of the metrics are calculated via the [calculate_metrics](scripts/calculate_metrics.py) script.
 
 Both models love to call things a blunder (93%/86.5% recall blunder-class), with the best-arm class showing that it errs
 on the side of calling best moves also a blunder (48%/32% recall best-class). The blunder-class recall would make it
@@ -171,31 +184,37 @@ For both of the above cases, I decided
 to [use UCI notation instead of SAN](https://github.com/jbmlaird/chess-coach/commit/78e80ae9f87d0ff912ad3ede3b72410de5089d76)
 aligning with the standard that UCI was created for chess engines since knowledge of the piece isn't required.
 
-### v2 results (2026-08-20/21, golden v1, 250 rows, no tools)
+### Instrument v2 · golden v1 · no tools (2026-08-20/21)
 
-|                                                                                                | Haiku 4.5          | Haiku 4.5 (thinking, 42k `max_tokens`) | Sonnet 4.6          | Sonnet 4.6 (thinking, 42k `max_tokens`) | Opus 5 (thinking disabled)         | Opus 5 (adaptive thinking, 32k `max_tokens`) | 
-|------------------------------------------------------------------------------------------------|--------------------|----------------------------------------|---------------------|-----------------------------------------|------------------------------------|----------------------------------------------|
-| Verdict + refutation accuracy (overall)                                                        | 14.4%              | 20.4%                                  | 21.6%               | 16.4%                                   | 31.2%                              | **34.8%**                                    |
-| - blunder arm / best arm                                                                       | 10.5% / 30%        | 13.5% / 48%                            | 13.5% / 54%         | 10.5% / 40%                             | 21.5% / **70.0%**                  | **28.0%** / 62.0%                            |
-| Blunder class - recall (caught real blunders)                                                  | **88.5%**          | 73.0%                                  | **88.5%**           | 37.5%                                   | 34.5%                              | 38.0%                                        |
-| Blunder class - precision (calls that were right)                                              | 83.5%              | 84.9%                                  | 88.5%               | 89.3%                                   | **90.8%**                          | 84.4%                                        |
-| Best class - recall (endorsed real best moves)                                                 | 30.0%              | 48.0%                                  | 54.0%               | 40.0%                                   | **70.0%**                          | 62.0%                                        |
-| Best class - precision (endorsements right)                                                    | 39.5%              | 30.8%                                  | **54.0%**           | 38.5%                                   | 28.5%                              | 24.8%                                        |
-| Best class - mean damage of suggested "improvements" (excludes correct endorsements)           | 67.4pp (n=17)      | 61.6pp (n=16)                          | 72.7pp (n=13)       | 71.7pp (n=8)                            | **59.9pp** (n=5)                   | 64.2pp (n=12)                                |              
-| Substantiation (correct blunder calls backing the certified refutation)                        | 11.9%              | 18.5%                                  | 15.3%               | 28.0%                                   | 62.3%                              | **73.7%**                                    |
-| Unplayable refutations (illegal, invalid or ambiguous)                                         | 88/200             | 46/200                                 | 39/200              | 11/200                                  | **2/200**                          | 5/200                                        |
-| Legal `BEST_MOVE` suggestions                                                                  | 47.2%              | 70%                                    | 72%                 | 44% (80.9% of answered)                 | 72.4%                              | **82.8%**                                    |
-| Suggested improvement damage (blunder arm, excludes rows where the model repeated the blunder) | 38.6pp (21%, n=63) | 41.6pp (17%, n=81)                     | 38.5pp (20%, n=117) | 31.1pp (34%, n=50)                      | **13.1pp (66%, n=56)**             | 20.3pp (56%, n=70)                           |
-| Unfinished samples (stop reason not `stop`)                                                    | **0**              | **0**                                  | **0**               | 115/250                                 | 29/250                             | 37/250                                       |
-| Empty outputs (whole budget spent thinking)                                                    | **0**              | **0**                                  | **0**               | 113/250 (45%)                           | **0**                              | 35/250 (14%)                                 |
-| Format failures (non-empty parse errors)                                                       | **0**              | **0**                                  | **0**               | 1                                       | 59/250 (23.6%, no thinking column) | **0**                                        |
-| Measured cost (full run)                                                                       | **~$1.02**         | ~$9.73                                 | ~$4.70              | ~$110.28                                | ~$99.75                            | ~$109.52                                     |
+The two 2026-08-20 columns without thinking record `task_version 0`: they ran with this byte-identical prompt before the
+version stamp landed. "Instrument v2" names the prompt, parsers and scorers, not the field in the log.
+
+|                                                                                                | Haiku 4.5          | Haiku 4.5 (thinking, 42k `max_tokens`) | Sonnet 4.6          | Sonnet 4.6 (thinking, 42k `max_tokens`) | Opus 5 (thinking disabled) | Opus 5 (adaptive thinking, 32k `max_tokens`) |
+|------------------------------------------------------------------------------------------------|--------------------|----------------------------------------|---------------------|-----------------------------------------|----------------------------|----------------------------------------------|
+| Verdict + refutation accuracy (overall)                                                        | 14.4%              | 20.4%                                  | 21.6%               | 16.4%                                   | 31.2%                      | **34.8%**                                    |
+| - blunder arm / best arm                                                                       | 10.5% / 30.0%      | 13.5% / 48.0%                          | 13.5% / 54.0%       | 10.5% / 40.0%                           | 21.5% / 70.0%              | 28.0% / 62.0%                                |
+| Blunder class - recall (caught real blunders)                                                  | **88.5%**          | 73.0%                                  | **88.5%**           | 37.5%                                   | 34.5%                      | 38.0%                                        |
+| Blunder class - precision (calls that were right)                                              | 83.5%              | 84.9%                                  | 88.5%               | 89.3%                                   | **90.8%**                  | 84.4%                                        |
+| Best class - recall (endorsed real best moves)                                                 | 30.0%              | 48.0%                                  | 54.0%               | 40.0%                                   | **70.0%**                  | 62.0%                                        |
+| Best class - precision (endorsements right)                                                    | 39.5%              | 30.8%                                  | **54.0%**           | 38.5%                                   | 28.5%                      | 24.8%                                        |
+| Best class - mean damage of suggested "improvements" (excludes correct endorsements)           | 67.4pp (n=17)      | 61.6pp (n=16)                          | 72.7pp (n=13)       | 71.7pp (n=8)                            | **59.9pp (n=5)**           | 64.2pp (n=12)                                |
+| Substantiation (correct blunder calls backing the certified refutation)                        | 11.9%              | 18.5%                                  | 15.3%               | 28.0%                                   | 62.3%                      | **73.7%**                                    |
+| Unplayable refutations (illegal, invalid or ambiguous)                                         | 88/200             | 46/200                                 | 39/200              | 11/200                                  | **2/200**                  | 5/200                                        |
+| Legal `BEST_MOVE` suggestions                                                                  | 47.2%              | 70.0%                                  | 72.0%               | 44.0% (80.9% of answered)               | 72.4% (95.8% of answered)  | **82.8% (96.3% of answered)**                |
+| Invalid `BEST_MOVE` answers (of which a lowercase piece letter)                                | 30/250 (30)        | **0/250 (0)**                          | **0/250 (0)**       | 1/250 (1)                               | 1/250 (0)                  | **0/250 (0)**                                |
+| Suggested improvement damage (blunder arm, excludes rows where the model repeated the blunder) | 38.6pp (21%, n=63) | 41.6pp (17%, n=81)                     | 38.5pp (20%, n=117) | 31.1pp (34%, n=50)                      | **13.1pp (66%, n=56)**     | 20.3pp (56%, n=70)                           |
+| Unfinished samples (stop reason not `stop`)                                                    | **0**              | **0**                                  | **0**               | 115/250 (46.0%)                         | 29/250 (11.6%)             | 37/250 (14.8%)                               |
+| Empty outputs (whole budget spent thinking)                                                    | **0**              | **0**                                  | **0**               | 113/250 (45.2%)                         | **0**                      | 35/250 (14.0%)                               |
+| Format failures (non-empty parse errors)                                                       | **0**              | **0**                                  | **0**               | 1/250 (0.4%)                            | 59/250 (23.6%)             | **0**                                        |
+| Measured cost (full run)                                                                       | **~$1.02**         | ~$9.73                                 | ~$4.70              | ~$110.28                                | ~$99.75                    | ~$109.52                                     |
 
 Damage (produced by [grade_logs.py](scripts/grade_logs.py)) is defined as the Lichess win% a move gives away versus the
 best move; 0pp is engine-perfect, <=5pp is
 within [Stockfish's noise floor](https://chess.stackexchange.com/questions/38860/for-fixed-depth-search-how-much-is-the-efficiency-different-between-odd-and-eve),
 ~47.5pp is an even game thrown into a forced mate, larger values would be the difference from the win% the best move
-would have given them. Damage cell notation is `mean (share of suggestions within 5pp of best, n graded)`. Every table
+would have given them. Damage cell notation is `mean (share of suggestions within 5pp of best, n graded)`. A legal
+`BEST_MOVE` cell's "of answered" figure divides by the rows whose output had a `BEST_MOVE` line the parser could read,
+which is a different count from the format-failure row (that one counts missing verdict lines). Every table
 above ran on golden v1
 and regrades with `--golden golden/v1/golden_engine.csv`.
 
@@ -230,27 +249,28 @@ Compared with Opus, Sonnet 4.6 with no thinking performed the best with all samp
 5% of the cost of Opus. The question remaining is, do these inferior models perform at a similar level
 to the frontier models once they're grounded?
 
-### v3 results (2026-09-08, golden v2, 250 rows, no tools)
+### Instrument v3 · golden v2 · no tools · thinking off (2026-09-08)
 
 The instrument is `Task(version=3)` with `tool_use=none`: the prompt is byte-identical to v2, the version bump only
 introduces the task parameter that the tool arms will use. These are the no-tool baselines on golden v2 that every
 grounded column will be read against. Logs live under `logs/golden-v2/`. Damage cells regrade with the default
-reference (golden v2); the golden v1 damage cells in the v2 table above still take
+reference (golden v2); the golden v1 damage cells in the two tables above still take
 `--golden golden/v1/golden_engine.csv`.
 
 |                                                                                                | Haiku 4.5          | Sonnet 4.6              |
 |------------------------------------------------------------------------------------------------|--------------------|-------------------------|
 | Verdict + refutation accuracy (overall)                                                        | 12.8%              | **22.0%**               |
-| - blunder arm / best arm                                                                       | 8.0% / 32%         | **19.0%** / **34%**     |
+| - blunder arm / best arm                                                                       | 8.0% / 32.0%       | 19.0% / 34.0%           |
 | Blunder class - recall (caught real blunders)                                                  | **90.5%**          | 84.0%                   |
 | Blunder class - precision (calls that were right)                                              | **84.2%**          | 83.6%                   |
 | Best class - recall (endorsed real best moves)                                                 | 32.0%              | **34.0%**               |
 | Best class - precision (endorsements right)                                                    | **45.7%**          | 34.7%                   |
-| Best class - mean damage of suggested "improvements" (excludes correct endorsements)           | 70.8pp (n=20)      | **69.5pp** (n=20)       |
+| Best class - mean damage of suggested "improvements" (excludes correct endorsements)           | 70.8pp (n=20)      | **69.5pp (n=20)**       |
 | Substantiation (correct blunder calls backing the certified refutation)                        | 8.8%               | **22.6%**               |
 | Unplayable refutations (illegal, invalid or ambiguous)                                         | 95/200             | **39/200**              |
 | Legal `BEST_MOVE` suggestions                                                                  | 55.2%              | **72.4%**               |
-| Suggested improvement damage (blunder arm, excludes rows where the model repeated the blunder) | 40.2pp (24%, n=84) | **36.7pp** (24%, n=112) |
+| Invalid `BEST_MOVE` answers (of which a lowercase piece letter)                                | 32/250 (32)        | **1/250 (1)**           |
+| Suggested improvement damage (blunder arm, excludes rows where the model repeated the blunder) | 40.2pp (24%, n=84) | **36.7pp (24%, n=112)** |
 | Unfinished samples (stop reason not `stop`)                                                    | **0**              | **0**                   |
 | Empty outputs (whole budget spent thinking)                                                    | **0**              | **0**                   |
 | Format failures (non-empty parse errors)                                                       | **0**              | **0**                   |
@@ -279,7 +299,7 @@ is the contract, they stay incorrect. The `invalid best moves` line of
 
 |                                     | Haiku 4.5, SAN prompt, golden v1 (no thinking) | Haiku 4.5, UCI prompt, golden v1 (no thinking) | Haiku 4.5, UCI prompt, golden v1 (thinking) | Haiku 4.5, UCI prompt, golden v2 (no thinking) | Sonnet 4.6, UCI prompt, golden v1 (no thinking) | Sonnet 4.6, UCI prompt, golden v2 (no thinking) |
 |-------------------------------------|------------------------------------------------|------------------------------------------------|---------------------------------------------|------------------------------------------------|-------------------------------------------------|-------------------------------------------------|
-| Legal `BEST_MOVE` suggestions       | 58%                                            | 47.2%                                          | 70%                                         | 55.2%                                          | 72%                                             | 72.4%                                           |
+| Legal `BEST_MOVE` suggestions       | 58.0%                                          | 47.2%                                          | 70.0%                                       | 55.2%                                          | 72.0%                                           | 72.4%                                           |
 | Invalid `BEST_MOVE` answers         | 0/250                                          | 30/250                                         | 0/250                                       | 32/250                                         | 0/250                                           | 1/250                                           |
 | - of which a lowercase piece letter | 0                                              | 30                                             | 0                                           | 32                                             | 0                                               | 1                                               |
 | Unplayable refutations              | 84/200                                         | 88/200                                         | 46/200                                      | 95/200                                         | 39/200                                          | 39/200                                          |

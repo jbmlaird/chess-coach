@@ -125,17 +125,15 @@ def resolve_log_file(path: Path) -> Path:
     return path
 
 
-def main() -> None:
-    args = parse_args()
-    reference, already_lost = load_reference(args.golden)
-
-    log_file = resolve_log_file(args.log_file)
+def grade(log_file: Path, golden: Path) -> dict:
+    """Every damage and refutation figure for one run, keyed as report() takes them."""
+    reference, already_lost = load_reference(golden)
     log = read_eval_log(log_file, exclude_fields={"messages", "events", "store", "attachments"})
     model = log.eval.model
     samples = log.samples or []
     assert len(samples) == 250, f"expected 250 samples, got {len(samples)}"
     if missing := {str(s.id) for s in samples} - reference.keys():
-        sys.exit(f"{len(missing)} sample ids (e.g. {sorted(missing)[:3]}) are not in golden {args.golden.parent.name} "
+        sys.exit(f"{len(missing)} sample ids (e.g. {sorted(missing)[:3]}) are not in golden {golden.parent.name} "
                  f"- pass --golden for the set this log ran on")
 
     stats = {"cache_hits": 0, "sidecar_hits": 0, "live_analyses": 0}
@@ -195,9 +193,14 @@ def main() -> None:
                 if model_refuter_pct >= STILL_WINNING_THRESHOLD_PCT:
                     still_winning += 1
 
-    arm_sizes = Counter(row["Arm"] for row in reference.values())
-    report(model, args.golden, damages, damages_excl_already_lost, ungraded,
-           refutation_deltas, still_winning, stats, dict(arm_sizes))
+    return dict(model=model, golden=golden, damages=damages, damages_excl=damages_excl_already_lost,
+                ungraded=ungraded, refutation_deltas=refutation_deltas, still_winning=still_winning,
+                stats=stats, arm_sizes=dict(Counter(row["Arm"] for row in reference.values())))
+
+
+def main() -> None:
+    args = parse_args()
+    report(**grade(resolve_log_file(args.log_file), args.golden))
 
 
 def describe(damage_list: list[float]) -> str:

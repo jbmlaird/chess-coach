@@ -24,6 +24,7 @@ from move_review import (  # noqa: E402
 
 GOLDEN_META = json.loads((REPO / "golden" / "v2" / "golden_candidates.meta.json").read_text())
 ARM_SIZES = {"blunder": GOLDEN_META["blunder_arm"], "best": GOLDEN_META["best_arm"]}
+TOTAL = sum(ARM_SIZES.values())
 
 PRICES = {
     "anthropic/claude-haiku-4-5": (1.00, 5.00),
@@ -55,17 +56,18 @@ def load(path: Path):
     return read_eval_log(path, exclude_fields={"messages", "events", "store", "attachments"})
 
 
-def read_log(path: Path, verbose: bool):
+def metrics(path: Path, verbose: bool = False) -> tuple:
+    """(eval_log, metrics dict) for one committed run; print_metrics() renders the dict."""
     eval_log = load(path)
 
-    metrics = {score.name: score.metrics for score in eval_log.results.scores}
-    assert set(metrics) == set(SCORERS), f"unexpected scorers: {set(metrics)}"
-    legal_move_blunder_accuracy = metrics["legal_move"]["blunder"].value
-    legal_move_best_accuracy = metrics["legal_move"]["best"].value
-    legal_move_accuracy = metrics["legal_move"]["all"].value
-    ground_truth_blunder_accuracy = metrics["ground_truth"]["blunder"].value
-    ground_truth_best_accuracy = metrics["ground_truth"]["best"].value
-    ground_truth_accuracy = metrics["ground_truth"]["all"].value
+    stored = {score.name: score.metrics for score in eval_log.results.scores}
+    assert set(stored) == set(SCORERS), f"unexpected scorers: {set(stored)}"
+    legal_move_blunder_accuracy = stored["legal_move"]["blunder"].value
+    legal_move_best_accuracy = stored["legal_move"]["best"].value
+    legal_move_accuracy = stored["legal_move"]["all"].value
+    ground_truth_blunder_accuracy = stored["ground_truth"]["blunder"].value
+    ground_truth_best_accuracy = stored["ground_truth"]["best"].value
+    ground_truth_accuracy = stored["ground_truth"]["all"].value
 
     ground_truth_outcomes = {"blunder": Counter(), "best": Counter()}
     legal_move_outcomes = {"blunder": Counter(), "best": Counter()}
@@ -175,43 +177,56 @@ def read_log(path: Path, verbose: bool):
     assert math.isclose(refutation_correct / sum(blunder_ground_truths.values()), ground_truth_blunder_accuracy), \
         "derived blunder-arm accuracy disagrees with the log's stored metric"
 
-    print(f"legal_move_blunder_accuracy: {legal_move_blunder_accuracy}")
-    print(f"legal_move_best_accuracy: {legal_move_best_accuracy}")
-    print(f"legal_move_accuracy: {legal_move_accuracy}")
-    print(f"legal_move_blunder_parse_error: {blunder_legal_move_parse_error}")
-    print(f"legal_move_best_parse_error: {best_legal_move_parse_error}")
-    invalid_best_moves = sum(counts[Outcome.INVALID.name] for counts in legal_move_outcomes.values())
-    total_samples = sum(ARM_SIZES.values())
-    print(f"invalid best moves: {invalid_best_moves}/{total_samples} (lowercase piece letter: {lowercase_piece})")
-    print(f"ground_truth_blunder_accuracy: {ground_truth_blunder_accuracy}")
-    print(f"ground_truth_best_accuracy: {ground_truth_best_accuracy}")
-    print(f"ground_truth_accuracy: {ground_truth_accuracy}")
-    print(f"ground_truth_blunder_abstained: {abstained_blunder}")
-    print(f"ground_truth_blunder_missing_refutation: {refutation_missing}")
-    print(f"ground_truth_best_parse_error: {parse_error_best}")
-    print(f"blunder_recall: {blunder_recall}")
-    print(f"blunder_precision: {blunder_precision}")
-    print(f"best_recall: {best_recall}")
-    print(f"best_precision: {best_precision}")
-    print(f"substantiation: {substantiation}")
-    print(f"unplayable refutations: {refutation_unplayable}/{sum(blunder_ground_truths.values())}")
-    total_empty = sum(empty_output.values())
-    print(f"unfinished samples (by stop_reason): {dict(unfinished) or 0}")
-    print(f"empty output samples: {total_empty}/{total_samples} "
-          f"(blunder arm {empty_output['blunder']}, best arm {empty_output['best']})")
+    (model, usage), = eval_log.stats.model_usage.items()
+    if model not in PRICES:
+        raise ValueError(f"no pricing for {model} - add it to PRICES")
+    input_rate, output_rate = PRICES[model]
+    # cache writes bill at 1.25x the input rate, cache reads at 0.10x
+    billable_input = (usage.input_tokens
+                      + 1.25 * (usage.input_tokens_cache_write or 0)
+                      + 0.10 * (usage.input_tokens_cache_read or 0))
+    return eval_log, {
+        "legal_move_blunder_accuracy": legal_move_blunder_accuracy,
+        "legal_move_best_accuracy": legal_move_best_accuracy,
+        "legal_move_accuracy": legal_move_accuracy,
+        "legal_move_blunder_parse_error": blunder_legal_move_parse_error,
+        "legal_move_best_parse_error": best_legal_move_parse_error,
+        "invalid_best_moves": sum(counts[Outcome.INVALID.name] for counts in legal_move_outcomes.values()),
+        "lowercase_piece": lowercase_piece,
+        "ground_truth_blunder_accuracy": ground_truth_blunder_accuracy,
+        "ground_truth_best_accuracy": ground_truth_best_accuracy,
+        "ground_truth_accuracy": ground_truth_accuracy,
+        "ground_truth_blunder_abstained": abstained_blunder,
+        "ground_truth_blunder_missing_refutation": refutation_missing,
+        "ground_truth_best_parse_error": parse_error_best,
+        "blunder_recall": blunder_recall,
+        "blunder_precision": blunder_precision,
+        "best_recall": best_recall,
+        "best_precision": best_precision,
+        "substantiation": substantiation,
+        "refutation_unplayable": refutation_unplayable,
+        "unfinished": dict(unfinished),
+        "empty_output": empty_output,
+        "cost": billable_input / 1_000_000 * input_rate + usage.output_tokens / 1_000_000 * output_rate,
+        "model": model,
+    }
 
-    for model, usage in eval_log.stats.model_usage.items():
-        if model not in PRICES:
-            raise ValueError(f"no pricing for {model} - add it to PRICES")
-        input_rate, output_rate = PRICES[model]
-        # cache writes bill at 1.25x the input rate, cache reads at 0.10x
-        billable_input = (usage.input_tokens
-                          + 1.25 * (usage.input_tokens_cache_write or 0)
-                          + 0.10 * (usage.input_tokens_cache_read or 0))
-        cost = billable_input / 1_000_000 * input_rate + usage.output_tokens / 1_000_000 * output_rate
-        print(f"cost: ${cost:.2f} for model: {model}")
-    return eval_log
 
+def print_metrics(m: dict) -> None:
+    for name in ("legal_move_blunder_accuracy", "legal_move_best_accuracy", "legal_move_accuracy",
+                 "legal_move_blunder_parse_error", "legal_move_best_parse_error"):
+        print(f"{name}: {m[name]}")
+    print(f"invalid best moves: {m['invalid_best_moves']}/{TOTAL} (lowercase piece letter: {m['lowercase_piece']})")
+    for name in ("ground_truth_blunder_accuracy", "ground_truth_best_accuracy", "ground_truth_accuracy",
+                 "ground_truth_blunder_abstained", "ground_truth_blunder_missing_refutation",
+                 "ground_truth_best_parse_error", "blunder_recall", "blunder_precision", "best_recall",
+                 "best_precision", "substantiation"):
+        print(f"{name}: {m[name]}")
+    print(f"unplayable refutations: {m['refutation_unplayable']}/{ARM_SIZES['blunder']}")
+    print(f"unfinished samples (by stop_reason): {m['unfinished'] or 0}")
+    print(f"empty output samples: {sum(m['empty_output'].values())}/{TOTAL} "
+          f"(blunder arm {m['empty_output']['blunder']}, best arm {m['empty_output']['best']})")
+    print(f"cost: ${m['cost']:.2f} for model: {m['model']}")
 
 def compare(eval_log, other_path: Path) -> None:
     """Paired comparison on the sample ids two runs share (a replication, or a dataset revision)."""
@@ -240,7 +255,8 @@ def parse_args() -> argparse.Namespace:
 
 def main():
     parsed_args = parse_args()
-    eval_log = read_log(parsed_args.log_file, parsed_args.verbose)
+    eval_log, m = metrics(parsed_args.log_file, parsed_args.verbose)
+    print_metrics(m)
     if parsed_args.compare_to:
         compare(eval_log, parsed_args.compare_to)
 
