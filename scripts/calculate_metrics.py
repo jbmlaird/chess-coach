@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -9,7 +10,7 @@ from pathlib import Path
 import math
 import rich
 from inspect_ai.log import read_eval_log
-from inspect_ai.scorer import INCORRECT, NOANSWER
+from inspect_ai.scorer import CORRECT, INCORRECT, NOANSWER
 
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
@@ -38,17 +39,27 @@ CLAIMED_BLUNDER_OUTCOMES = {
     Outcome.AMBIGUOUS.name,
 }
 KNOWN_OUTCOMES = CLAIMED_BLUNDER_OUTCOMES | {WRONG_VERDICT, CORRECT_VERDICT, Outcome.PARSE_ERROR.name}
+# a lower-cased r/n/q/k prefix ("rd1", "qe4e8") fails python-chess's SAN regex and scores INVALID;
+# a lower-cased b reads as the b-pawn file and lands in ILLEGAL instead, so it is not counted here
+LOWERCASE_PIECE = re.compile(r"^[rnqk][a-h1-8x]")
+
+
+SCORERS = ("legal_move", "ground_truth")
 
 
 def ratio(numerator: int, denominator: int) -> float | None:
     return numerator / denominator if denominator else None
 
 
+def load(path: Path):
+    return read_eval_log(path, exclude_fields={"messages", "events", "store", "attachments"})
+
+
 def read_log(path: Path, verbose: bool):
-    eval_log = read_eval_log(log_file=path, exclude_fields={"messages", "events", "store", "attachments"})
+    eval_log = load(path)
 
     metrics = {score.name: score.metrics for score in eval_log.results.scores}
-    assert set(metrics) == {"legal_move", "ground_truth"}, f"unexpected scorers: {set(metrics)}"
+    assert set(metrics) == set(SCORERS), f"unexpected scorers: {set(metrics)}"
     legal_move_blunder_accuracy = metrics["legal_move"]["blunder"].value
     legal_move_best_accuracy = metrics["legal_move"]["best"].value
     legal_move_accuracy = metrics["legal_move"]["all"].value
@@ -62,12 +73,16 @@ def read_log(path: Path, verbose: bool):
 
     unfinished = Counter()
     empty_output = {"blunder": 0, "best": 0}
+    lowercase_piece = 0
 
     for sample in eval_log.samples:
         arm = sample.metadata['GroundTruth']
         ground_truth = sample.scores["ground_truth"]
+        legal_move = sample.scores["legal_move"]
         ground_truth_outcomes[arm][ground_truth.metadata["outcome"]] += 1
-        legal_move_outcomes[arm][sample.scores["legal_move"].metadata["outcome"]] += 1
+        legal_move_outcomes[arm][legal_move.metadata["outcome"]] += 1
+        if legal_move.metadata["outcome"] == Outcome.INVALID.name and LOWERCASE_PIECE.match(legal_move.answer):
+            lowercase_piece += 1
         if ground_truth.metadata["outcome"] == Outcome.PARSE_ERROR.name and ground_truth.value == INCORRECT:
             missing_refutation[arm] += 1
         if sample.output.stop_reason != "stop":
@@ -165,6 +180,9 @@ def read_log(path: Path, verbose: bool):
     print(f"legal_move_accuracy: {legal_move_accuracy}")
     print(f"legal_move_blunder_parse_error: {blunder_legal_move_parse_error}")
     print(f"legal_move_best_parse_error: {best_legal_move_parse_error}")
+    invalid_best_moves = sum(counts[Outcome.INVALID.name] for counts in legal_move_outcomes.values())
+    total_samples = sum(ARM_SIZES.values())
+    print(f"invalid best moves: {invalid_best_moves}/{total_samples} (lowercase piece letter: {lowercase_piece})")
     print(f"ground_truth_blunder_accuracy: {ground_truth_blunder_accuracy}")
     print(f"ground_truth_best_accuracy: {ground_truth_best_accuracy}")
     print(f"ground_truth_accuracy: {ground_truth_accuracy}")
@@ -177,7 +195,6 @@ def read_log(path: Path, verbose: bool):
     print(f"best_precision: {best_precision}")
     print(f"substantiation: {substantiation}")
     print(f"unplayable refutations: {refutation_unplayable}/{sum(blunder_ground_truths.values())}")
-    total_samples = sum(ARM_SIZES.values())
     total_empty = sum(empty_output.values())
     print(f"unfinished samples (by stop_reason): {dict(unfinished) or 0}")
     print(f"empty output samples: {total_empty}/{total_samples} "
@@ -193,18 +210,39 @@ def read_log(path: Path, verbose: bool):
                           + 0.10 * (usage.input_tokens_cache_read or 0))
         cost = billable_input / 1_000_000 * input_rate + usage.output_tokens / 1_000_000 * output_rate
         print(f"cost: ${cost:.2f} for model: {model}")
+    return eval_log
+
+
+def compare(eval_log, other_path: Path) -> None:
+    """Paired comparison on the sample ids two runs share (a replication, or a dataset revision)."""
+    other = {s.id: s for s in load(other_path).samples}
+    shared = [s for s in eval_log.samples if s.id in other]
+    n = len(shared)
+    print(f"shared rows with {other_path.name}: {n}")
+    for scorer in SCORERS:
+        was = [other[s.id].scores[scorer].value == CORRECT for s in shared]
+        now = [s.scores[scorer].value == CORRECT for s in shared]
+        lost = sum(a and not b for a, b in zip(was, now))
+        gained = sum(b and not a for a, b in zip(was, now))
+        # standard error of a paired difference in proportions: only the discordant rows carry variance
+        se = math.sqrt(lost + gained - (gained - lost) ** 2 / n) / n
+        print(f"{scorer} on shared rows: {sum(was)}/{n} -> {sum(now)}/{n} "
+              f"(lost {lost}, gained {gained}, paired se {100 * se:.1f}pp)")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--log_file", type=Path, required=True)
     parser.add_argument("--verbose", default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument("--compare_to", type=Path, help="an earlier run of the same instrument to pair with on shared sample ids")
     return parser.parse_args()
 
 
 def main():
     parsed_args = parse_args()
-    read_log(parsed_args.log_file, parsed_args.verbose)
+    eval_log = read_log(parsed_args.log_file, parsed_args.verbose)
+    if parsed_args.compare_to:
+        compare(eval_log, parsed_args.compare_to)
 
 
 if __name__ == "__main__":

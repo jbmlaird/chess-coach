@@ -5,7 +5,7 @@ import pytest
 from inspect_ai.model import ModelOutput
 from inspect_ai.scorer import Target, CORRECT, INCORRECT, NOANSWER
 from inspect_ai.solver import TaskState
-from move_review import METADATA_FIELDS, PROMPT, ground_truth, legal_move
+from move_review import METADATA_FIELDS, PROMPT, ground_truth, legal_move, positions
 
 BLUNDER_FEN = "r4q1k/6pp/1p3n2/5N2/P1b2P2/1Q2P2P/K5P1/2bR2R1 w - - 0 31"
 BLUNDER_META = {"PlayedMove": "b3c4", "GroundTruth": "blunder",
@@ -23,6 +23,11 @@ def make_state(board_fen: str, completion: str, metadata: dict | None = None):
         output=ModelOutput.from_content(model="mockllm/model", content=completion),
         metadata={"FEN": board_fen, **(metadata or {})},
     )
+
+
+def test_unwired_tool_use_is_rejected_at_build():
+    with pytest.raises(ValueError, match="tool_use"):
+        positions(tool_use="required")
 
 
 @pytest.mark.parametrize(

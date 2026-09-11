@@ -1,13 +1,60 @@
 # Chess Coach Eval
 
-This is an evaluation framework evaluating LLMs and their chess accuracy. It's a rebuild of an AI agent repo I have
-where I'm rewriting the evaluation logic by hand to get a solid understanding.
+An evaluation harness that measures how well LLMs coach chess, built so that every published number regenerates
+from a committed artifact by a script. A model is shown a position and the move a student played, and must say
+whether it was a blunder or the best move, name the punishing reply if blunder, and suggest the best move. Every
+answer is scored against Stockfish, never against the model's own chess judgement.
+
+**What it's found so far**:
+
+- Ungrounded models detect blunders but cannot verify them. They call 84-91% of real blunders a blunder, but also
+  call two thirds of engine-best moves a blunder. When they're right about a blunder they name the certified
+  refutation only 8.8% (Haiku) and 22.6% (Sonnet) of the time. A frontier model with adaptive thinking reaches
+  73.7% on the same question at $110 a run instead of $1-5 (golden v1).
+- The "better move" they suggest instead is usually worse than the blunder: on blunder positions the suggested
+  improvement gives away 37-40 win-probability points on average and only a quarter of suggestions are within engine
+  noise of the best move. Between 28% and 45% of suggested moves are not even legal.
+- Evaluation noise is measured, not assumed. Re-running an identical configuration nineteen days apart moved
+  Haiku's legality rate by 8.6 points and flipped its verdict on 103 of 245 shared positions; the paired standard
+  error is about 3-4 points, so single-run differences under 8 points are noise here.
+- A notation contract exposes a model habit: under a UCI prompt, Haiku writes lowercase piece letters (`rd1`) on
+  12% of answers, which the strict parser rejects by design
+- Long-thinking runs are a bad trade at this budget: Sonnet 4.6 with thinking spent its whole 42k-token budget and
+  returned nothing on 45% of positions, for 23 times the cost of the same model without thinking.
+
+![Golden v2 baselines: blunder recall, best-move recall, substantiation and legal best-move rate for Haiku 4.5 and Sonnet 4.6](charts/golden-v2-baselines.svg)
+
+The chart is drawn by [plot_results.py](scripts/plot_results.py) from the same script lines the tables quote;
+`uv run python scripts/plot_results.py` regenerates it
+
+**How it's built**
+
+- Dataset: 250 Lichess puzzles played after the models' training cutoffs, stratified over 10 tactical motifs and 4
+  rating bands, tagged by Lichess's own vendored tagger, hand-reviewed, then certified by a pinned Stockfish 18 and
+  frozen with a sha256 handshake (`golden/v2/`). Five rows the engine showed were not real blunders were replaced
+  under a stated rule and the whole set re-certified; both versions are kept so every old table still regenerates.
+- Harness: [Inspect AI](https://inspect.aisi.org.uk) task in [move_review.py](move_review.py) with two scorers,
+  legality and ground truth, and a strict output contract. The prompt, parsers and scorers are the instrument; any
+  change bumps `Task(version=N)` and starts a new results column.
+- Grading: [certify_golden.py](scripts/certify_golden.py) freezes the reference evals,
+  [grade_logs.py](scripts/grade_logs.py) scores suggested moves in Lichess win-probability space,
+  [calculate_metrics.py](scripts/calculate_metrics.py) derives every table cell, and
+  [tests](tests/test_calculate_metrics.py) pin the published lines against the committed logs.
+- Spend discipline: mock run, then an 8-sample paid pilot whose measured tokens project the full cost, then approval.
+  Full runs cost $1 (Haiku) to $5 (Sonnet); the three thinking and frontier runs that cost $100-110 each are in the
+  tables as the reason the protocol exists.
+
+## Background
+
+This is a rebuild of an AI agent repo I have where I'm rewriting the evaluation logic by hand to get a solid
+understanding.
 
 ### Dataset selection
 
 To try and avoid training memorisation of chess positions, puzzles are selected after the tested model's cutoff dates.
 Anthropic's can be found [here](https://support.claude.com/en/articles/8114494-how-up-to-date-is-claude-s-training-data)
-(with Opus 5 being May 2026) and OpenAI's [here](https://developers.openai.com/api/docs/models) (Feb 2026).
+(with Opus 5 being May 2026) and OpenAI's [here](https://developers.openai.com/api/docs/models) (Astra being April
+2026).
 
 Of course, canonical positions that are common (such as endgames) likely will have been seen before, but this attempts
 to avoid the number of seen-before positions, mainly in the middlegame where there are more pieces and more variation in
@@ -29,7 +76,8 @@ which I've vendored to tag the outstanding puzzles, rather than handroll myself.
 [tag_post_cutoff.py](/scripts/tag_post_cutoff.py) runs it over every post-cutoff puzzle and writes the labels to a
 sidecar [post_cutoff_themes.csv](/post_cutoff_themes.csv).
 
-A golden dataset of 250 puzzles was sampled and written to `golden/v1/golden_candidates.csv`. This has a mixture of themes (such
+A golden dataset of 250 puzzles was sampled and written to `golden/v1/golden_candidates.csv`. This has a mixture of
+themes (such
 as `fork`, `skewer`, `pin`, `attraction`, `deflection` etc.) at a variety of rating levels to have a varied dataset. 200
 of the puzzles play moves that are blunders, 50 puzzles where the best move was played. This dataset was automatically
 tagged by the vendored `lichess_puzzler` and verified myself by hand. 250 rows had correct tags. Of those 250, 7 felt
@@ -55,7 +103,8 @@ as if they were missing tags:
 
 Before grading anything against Stockfish, I certified the dataset itself:
 [certify_golden.py](scripts/certify_golden.py) runs a pinned engine (Stockfish 18, 1M nodes/position) over every golden
-row and freezes the reference evals in [golden_engine.csv](golden/v1/golden_engine.csv). The engine verified the labels almost
+row and freezes the reference evals in [golden_engine.csv](golden/v1/golden_engine.csv). The engine verified the labels
+almost
 completely: on all 50 best-arm rows its best move _is_ the played move, and on all 200 blunder rows its best reply _is_
 the certified refutation
 
@@ -96,7 +145,7 @@ blunder row clears the floor.
 | Legal `BEST_MOVE` suggestions                                           | 58%       | 69%        |
 | Measured cost (full run)                                                | ~$1.00    | ~$4.04     |
 
-Logs live in `/logs`, viewable with `uv run inspect view` from the root. The accuracy rows are pulled from the
+Logs for the golden v1 tables live in `logs/golden-v1/`, viewable with `uv run inspect view` from the root. The accuracy rows are pulled from the
 log metadata, the rest of the metrics are calculated via the [calculate_metrics](scripts/calculate_metrics.py) script.
 
 Both models love to call things a blunder (93%/86.5% recall blunder-class), with the best-arm class showing that it errs
@@ -124,7 +173,7 @@ aligning with the standard that UCI was created for chess engines since knowledg
 
 ### v2 results (2026-08-20/21, golden v1, 250 rows, no tools)
 
-|                                                                                                | Haiku 4.5          | Haiku 4.5 (thinking, 32k `max_tokens`) | Sonnet 4.6          | Sonnet 4.6 (thinking, 32k `max_tokens`) | Opus 5 (thinking disabled)         | Opus 5 (adaptive thinking, 32k `max_tokens`) | 
+|                                                                                                | Haiku 4.5          | Haiku 4.5 (thinking, 42k `max_tokens`) | Sonnet 4.6          | Sonnet 4.6 (thinking, 42k `max_tokens`) | Opus 5 (thinking disabled)         | Opus 5 (adaptive thinking, 32k `max_tokens`) | 
 |------------------------------------------------------------------------------------------------|--------------------|----------------------------------------|---------------------|-----------------------------------------|------------------------------------|----------------------------------------------|
 | Verdict + refutation accuracy (overall)                                                        | 14.4%              | 20.4%                                  | 21.6%               | 16.4%                                   | 31.2%                              | **34.8%**                                    |
 | - blunder arm / best arm                                                                       | 10.5% / 30%        | 13.5% / 48%                            | 13.5% / 54%         | 10.5% / 40%                             | 21.5% / **70.0%**                  | **28.0%** / 62.0%                            |
@@ -146,7 +195,8 @@ Damage (produced by [grade_logs.py](scripts/grade_logs.py)) is defined as the Li
 best move; 0pp is engine-perfect, <=5pp is
 within [Stockfish's noise floor](https://chess.stackexchange.com/questions/38860/for-fixed-depth-search-how-much-is-the-efficiency-different-between-odd-and-eve),
 ~47.5pp is an even game thrown into a forced mate, larger values would be the difference from the win% the best move
-would have given them. Damage cell notation is `mean (share of suggestions within 5pp of best, n graded)`. Every table above ran on golden v1
+would have given them. Damage cell notation is `mean (share of suggestions within 5pp of best, n graded)`. Every table
+above ran on golden v1
 and regrades with `--golden golden/v1/golden_engine.csv`.
 
 After switching to UCI, notation caused nearly every metric to drop for Haiku (substantiation was flat: 11.8% to 11.9%).
@@ -163,9 +213,10 @@ substantiation massively, while reducing the number of unplayable refutations. I
 adaptive thinking or a more powerful model is the main reason for this shift. The default max token size with Inspect is
 32k tokens (shared by thinking and answer), and the output of 37 samples were incomplete due to reaching that cap.
 
-A great example of exhausting the 32k `max_tokens` output cap: run `uv run inspect view` and open the link, take a look
+A great example of exhausting the 42k `max_tokens` output cap (32k plus the 10k Inspect adds for medium reasoning
+effort): run `uv run inspect view` and open the link, take a look
 at
-`0F0X2` in the `sonnet-4-6-thinking` folder: `Let me step back`, `This is getting tangled, so let me step back`,
+`0F0X2` in the `logs/golden-v1/sonnet-4-6-thinking` folder: `Let me step back`, `This is getting tangled, so let me step back`,
 `This is getting complicated, so let me step back`, `This line is getting tangled, so let me step back`,
 `Let me reconsider the position more practically`, `Stepping back from this deep line, I want to reconsider`,
 `Given the complexity, I'll step back and just evaluate the overall line`,
@@ -178,6 +229,68 @@ into a hole was done in the prose returned rather than in a separate reasoning s
 Compared with Opus, Sonnet 4.6 with no thinking performed the best with all samples finishing, and reasonable metrics at
 5% of the cost of Opus. The question remaining is, do these inferior models perform at a similar level
 to the frontier models once they're grounded?
+
+### v3 results (2026-09-08, golden v2, 250 rows, no tools)
+
+The instrument is `Task(version=3)` with `tool_use=none`: the prompt is byte-identical to v2, the version bump only
+introduces the task parameter that the tool arms will use. These are the no-tool baselines on golden v2 that every
+grounded column will be read against. Logs live under `logs/golden-v2/`. Damage cells regrade with the default
+reference (golden v2); the golden v1 damage cells in the v2 table above still take
+`--golden golden/v1/golden_engine.csv`.
+
+|                                                                                                | Haiku 4.5          | Sonnet 4.6              |
+|------------------------------------------------------------------------------------------------|--------------------|-------------------------|
+| Verdict + refutation accuracy (overall)                                                        | 12.8%              | **22.0%**               |
+| - blunder arm / best arm                                                                       | 8.0% / 32%         | **19.0%** / **34%**     |
+| Blunder class - recall (caught real blunders)                                                  | **90.5%**          | 84.0%                   |
+| Blunder class - precision (calls that were right)                                              | **84.2%**          | 83.6%                   |
+| Best class - recall (endorsed real best moves)                                                 | 32.0%              | **34.0%**               |
+| Best class - precision (endorsements right)                                                    | **45.7%**          | 34.7%                   |
+| Best class - mean damage of suggested "improvements" (excludes correct endorsements)           | 70.8pp (n=20)      | **69.5pp** (n=20)       |
+| Substantiation (correct blunder calls backing the certified refutation)                        | 8.8%               | **22.6%**               |
+| Unplayable refutations (illegal, invalid or ambiguous)                                         | 95/200             | **39/200**              |
+| Legal `BEST_MOVE` suggestions                                                                  | 55.2%              | **72.4%**               |
+| Suggested improvement damage (blunder arm, excludes rows where the model repeated the blunder) | 40.2pp (24%, n=84) | **36.7pp** (24%, n=112) |
+| Unfinished samples (stop reason not `stop`)                                                    | **0**              | **0**                   |
+| Empty outputs (whole budget spent thinking)                                                    | **0**              | **0**                   |
+| Format failures (non-empty parse errors)                                                       | **0**              | **0**                   |
+| Measured cost (full run)                                                                       | **~$1.02**         | ~$4.70                  |
+
+Golden v2 shares 245 rows with v1, so this table is also a replication of the v2 Haiku and Sonnet columns: same prompt,
+same settings, nineteen days apart. `calculate_metrics.py --compare_to <earlier log>` pairs the two runs on the
+shared rows. Haiku's legal `BEST_MOVE` rate moved from 116/245 (47.3%) to 137/245 (55.9%) and its verdict + refutation
+accuracy from 36/245 (14.7%) to 32/245 (13.1%); Sonnet moved from 177/245 (72.2%) to 178/245 (72.7%) and from 53/245
+(21.6%) to 54/245 (22.0%). The aggregates hide how much the individual answers churn: Haiku's legality verdict changed
+on 103 of the 245 rows (41 lost, 62 gained, the +21 behind its rise) and Sonnet's on 63 (31 lost, 32 gained,
+cancelling). Two runs give one difference, not a distribution, so the honest statement is the paired standard error the
+script prints from those discordant rows: about 4pp (Haiku) and 3pp (Sonnet) on legality, 2.5-3pp on verdict +
+refutation. A single-run difference inside roughly twice that, 8pp on legality or 5pp on accuracy, is within sampling
+noise for either model at n=250, and row-level comparisons between two runs are close to meaningless.
+
+### Invalid best moves: Haiku's lowercase piece letters
+
+The prompt asks for UCI (from-square then to-square, `e7e5`). The parser is more tolerant than the prompt: it accepts
+UCI or correctly cased SAN, because python-chess parses both. What it cannot parse is a lower-cased rook, knight, queen
+or king letter: plain lowercase SAN (`rd1`, `kf8`, `kc3`) or a piece letter bolted onto a UCI move (`rd3e2`, `qe4e8`,
+`qf5f1`). Those score `INVALID` and count as incorrect. A lower-cased bishop is read as the b-pawn file instead and
+scores `ILLEGAL`, so the counts below slightly undercount the habit. Since the prompt states the notation and the format
+is the contract, they stay incorrect. The `invalid best moves` line of
+[calculate_metrics.py](scripts/calculate_metrics.py) counts them.
+
+|                                     | Haiku 4.5, SAN prompt, golden v1 (no thinking) | Haiku 4.5, UCI prompt, golden v1 (no thinking) | Haiku 4.5, UCI prompt, golden v1 (thinking) | Haiku 4.5, UCI prompt, golden v2 (no thinking) | Sonnet 4.6, UCI prompt, golden v1 (no thinking) | Sonnet 4.6, UCI prompt, golden v2 (no thinking) |
+|-------------------------------------|------------------------------------------------|------------------------------------------------|---------------------------------------------|------------------------------------------------|-------------------------------------------------|-------------------------------------------------|
+| Legal `BEST_MOVE` suggestions       | 58%                                            | 47.2%                                          | 70%                                         | 55.2%                                          | 72%                                             | 72.4%                                           |
+| Invalid `BEST_MOVE` answers         | 0/250                                          | 30/250                                         | 0/250                                       | 32/250                                         | 0/250                                           | 1/250                                           |
+| - of which a lowercase piece letter | 0                                              | 30                                             | 0                                           | 32                                             | 0                                               | 1                                               |
+| Unplayable refutations              | 84/200                                         | 88/200                                         | 46/200                                      | 95/200                                         | 39/200                                          | 39/200                                          |
+
+The class is a stable property of Haiku 4.5 without thinking under the UCI instruction, not run-to-run noise: 30 and
+32 in the two UCI runs, none under the SAN prompt, none with thinking on, and one for Sonnet across two runs. It is also
+the size of the legality drop that followed the switch to UCI: legal answers fell from 145 to 118 while, per
+`calculate_metrics.py --verbose`, ILLEGAL stayed flat (102 to 101), AMBIGUOUS fell from 3 to 1 and INVALID rose from 0
+to 30. That is a statement about totals, not about which rows moved, and it says nothing about whether those moves would
+have been legal with the piece letter cased. The grounded arms should make the class vanish: a model that copies
+`best_move` out of the tool result gets a clean UCI string for free.
 
 ## motif_detector.py: an independent cross-check
 

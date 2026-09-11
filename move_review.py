@@ -122,10 +122,13 @@ def ground_truth():
 
 
 @task
-def positions() -> Task:
+def positions(tool_use: str = "none") -> Task:
+    # none | optional | required; the tool arms land with the Stockfish wiring
+    if tool_use != "none":
+        raise ValueError(f"tool_use={tool_use!r}: only 'none' is wired yet")
     return Task(
         name='Positions',
-        version=2,
+        version=3,
         dataset=csv_dataset(
             'golden/v2/golden_candidates.csv',
             sample_fields=FieldSpec(
