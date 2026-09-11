@@ -13,8 +13,8 @@ The cache records the engine provenance it was built with and the script
 refuses to mix instruments.
 
 Usage:
-    uv run python scripts/grade_logs.py --log_file logs/<model>-tool-required/<file>.eval
-    uv run python scripts/grade_logs.py --log_file logs/opus-5/<file>.eval --golden golden/v1/golden_engine.csv
+    uv run python scripts/grade_logs.py --log_file logs/golden-v2/<model>-tool-required/<file>.eval
+    uv run python scripts/grade_logs.py --log_file logs/golden-v1/opus-5/<file>.eval --golden golden/v1/golden_engine.csv
 (logs from before golden/ was versioned ran on v1; the default reference is the current version)
 """
 
