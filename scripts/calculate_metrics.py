@@ -24,6 +24,7 @@ from move_review import (  # noqa: E402
 
 GOLDEN_META = json.loads((REPO / "golden" / "v2" / "golden_candidates.meta.json").read_text())
 ARM_SIZES = {"blunder": GOLDEN_META["blunder_arm"], "best": GOLDEN_META["best_arm"]}
+TOTAL = sum(ARM_SIZES.values())
 
 PRICES = {
     "anthropic/claude-haiku-4-5": (1.00, 5.00),
@@ -59,14 +60,14 @@ def metrics(path: Path, verbose: bool = False) -> tuple:
     """(eval_log, metrics dict) for one committed run; print_metrics() renders the dict."""
     eval_log = load(path)
 
-    metrics = {score.name: score.metrics for score in eval_log.results.scores}
-    assert set(metrics) == set(SCORERS), f"unexpected scorers: {set(metrics)}"
-    legal_move_blunder_accuracy = metrics["legal_move"]["blunder"].value
-    legal_move_best_accuracy = metrics["legal_move"]["best"].value
-    legal_move_accuracy = metrics["legal_move"]["all"].value
-    ground_truth_blunder_accuracy = metrics["ground_truth"]["blunder"].value
-    ground_truth_best_accuracy = metrics["ground_truth"]["best"].value
-    ground_truth_accuracy = metrics["ground_truth"]["all"].value
+    stored = {score.name: score.metrics for score in eval_log.results.scores}
+    assert set(stored) == set(SCORERS), f"unexpected scorers: {set(stored)}"
+    legal_move_blunder_accuracy = stored["legal_move"]["blunder"].value
+    legal_move_best_accuracy = stored["legal_move"]["best"].value
+    legal_move_accuracy = stored["legal_move"]["all"].value
+    ground_truth_blunder_accuracy = stored["ground_truth"]["blunder"].value
+    ground_truth_best_accuracy = stored["ground_truth"]["best"].value
+    ground_truth_accuracy = stored["ground_truth"]["all"].value
 
     ground_truth_outcomes = {"blunder": Counter(), "best": Counter()}
     legal_move_outcomes = {"blunder": Counter(), "best": Counter()}
@@ -212,11 +213,10 @@ def metrics(path: Path, verbose: bool = False) -> tuple:
 
 
 def print_metrics(m: dict) -> None:
-    total = sum(ARM_SIZES.values())
     for name in ("legal_move_blunder_accuracy", "legal_move_best_accuracy", "legal_move_accuracy",
                  "legal_move_blunder_parse_error", "legal_move_best_parse_error"):
         print(f"{name}: {m[name]}")
-    print(f"invalid best moves: {m['invalid_best_moves']}/{total} (lowercase piece letter: {m['lowercase_piece']})")
+    print(f"invalid best moves: {m['invalid_best_moves']}/{TOTAL} (lowercase piece letter: {m['lowercase_piece']})")
     for name in ("ground_truth_blunder_accuracy", "ground_truth_best_accuracy", "ground_truth_accuracy",
                  "ground_truth_blunder_abstained", "ground_truth_blunder_missing_refutation",
                  "ground_truth_best_parse_error", "blunder_recall", "blunder_precision", "best_recall",
@@ -224,7 +224,7 @@ def print_metrics(m: dict) -> None:
         print(f"{name}: {m[name]}")
     print(f"unplayable refutations: {m['refutation_unplayable']}/{ARM_SIZES['blunder']}")
     print(f"unfinished samples (by stop_reason): {m['unfinished'] or 0}")
-    print(f"empty output samples: {sum(m['empty_output'].values())}/{total} "
+    print(f"empty output samples: {sum(m['empty_output'].values())}/{TOTAL} "
           f"(blunder arm {m['empty_output']['blunder']}, best arm {m['empty_output']['best']})")
     print(f"cost: ${m['cost']:.2f} for model: {m['model']}")
 

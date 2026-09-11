@@ -73,14 +73,35 @@ censored pilot turned a "$53" Opus run into $109.52.
 
 ## Numbers and the README
 
-- Every table cell must come from a script (`scripts/calculate_metrics.py`,
-  `scripts/grade_logs.py`) run against committed logs — hand-transcription has
-  produced transposed cells twice; verify cells against script output after
-  editing.
+- Results tables are never typed. `scripts/render_results.py` renders every
+  table from the committed logs (via `calculate_metrics.metrics()` and
+  `grade_logs.grade()`); paste its output verbatim under the heading it
+  declares. `tests/test_render_results.py` fails on any differing row (the two
+  damage rows need the engine and a warm cache, so CI checks the rest). A new
+  column is a new entry in `TABLES`, never a hand-typed cell — hand-transcription
+  produced transposed cells twice and let a wrong token budget survive three
+  tables. Numbers quoted in prose come from a printed script line that a test
+  pins (`tests/test_calculate_metrics.py`).
+- Table headings carry all three dimensions: instrument version, golden
+  version, arm (`Instrument v3 · golden v2 · no tools`). Logs live at
+  `logs/golden-v<N>/<model>[-thinking|-no-thinking][-tool-optional|-tool-required]/`,
+  one committed run per directory; the golden version a run graded against is
+  read from that path.
 - Quality stats condition on legal answers only: always print/quote the
   per-arm denominator (`n=63/200`). Never headline the blended blunder-arm
   damage (it mixes detection failures with suggestion quality and inverts
   model rankings).
+- Grounded (tool-arm) columns are published only with the tool-aware metrics
+  beside them (tool errors, called-before-answer, relay fidelity, frame
+  errors): on a tool arm `ground_truth` measures whether the model copied the
+  engine, not whether it judged the position.
+
+## Training data (rule stated before any training exists)
+
+- The golden set never appears in training data, in any version: every
+  training set is checked against `golden/*/golden_candidates.csv` by puzzle
+  ID and by FEN before use, and that check runs in CI once a training set is
+  committed.
 
 ## Environment
 

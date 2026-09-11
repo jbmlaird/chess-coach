@@ -41,13 +41,14 @@ The chart is drawn by [plot_results.py](scripts/plot_results.py) from the same n
   [grade_logs.py](scripts/grade_logs.py) scores suggested moves in Lichess win-probability space,
   [calculate_metrics.py](scripts/calculate_metrics.py) derives every table cell,
   [render_results.py](scripts/render_results.py) renders the tables below from those numbers, and
-  [tests](tests/test_render_results.py) fail if a README table differs from the rendered one.
+  [tests](tests/test_render_results.py) fail if any row of a README table differs from the rendered one (the two damage
+  rows need the engine, so CI checks the rest).
 - Spend discipline: mock run, then an 8-sample paid pilot whose measured tokens project the full cost, then approval.
   Full runs cost $1 (Haiku) to $5 (Sonnet); the three thinking and frontier runs that cost $100-110 each are in the
   tables as the reason the protocol exists.
 
 **The open question:** do the cheaper models reach the frontier model's numbers once they are grounded in the
-engine? The next column answers it: the same eval with a Stockfish tool the model can call.
+engine? The next column will answer it: the same eval with a Stockfish tool the model can call.
 
 ## Background
 
@@ -157,7 +158,8 @@ blunder row clears the floor.
 | Measured cost (full run)                                                                       | **~$1.00**         | ~$4.04                  |
 
 Logs for the golden v1 tables live in `logs/golden-v1/`, viewable with `uv run inspect view` from the root. The accuracy rows are pulled from the
-log metadata, the rest of the metrics are calculated via the [calculate_metrics](scripts/calculate_metrics.py) script.
+log metadata, the damage rows come from [grade_logs.py](scripts/grade_logs.py) (defined below the next table), and the
+rest of the metrics are calculated via the [calculate_metrics](scripts/calculate_metrics.py) script.
 
 Both models love to call things a blunder (93%/86.5% recall blunder-class), with the best-arm class showing that it errs
 on the side of calling best moves also a blunder (48%/32% recall best-class). The blunder-class recall would make it
@@ -184,6 +186,9 @@ aligning with the standard that UCI was created for chess engines since knowledg
 
 ### Instrument v2 · golden v1 · no tools (2026-08-20/21)
 
+The two 2026-08-20 columns without thinking record `task_version 0`: they ran with this byte-identical prompt before the
+version stamp landed. "Instrument v2" names the prompt, parsers and scorers, not the field in the log.
+
 |                                                                                                | Haiku 4.5          | Haiku 4.5 (thinking, 42k `max_tokens`) | Sonnet 4.6          | Sonnet 4.6 (thinking, 42k `max_tokens`) | Opus 5 (thinking disabled) | Opus 5 (adaptive thinking, 32k `max_tokens`) |
 |------------------------------------------------------------------------------------------------|--------------------|----------------------------------------|---------------------|-----------------------------------------|----------------------------|----------------------------------------------|
 | Verdict + refutation accuracy (overall)                                                        | 14.4%              | 20.4%                                  | 21.6%               | 16.4%                                   | 31.2%                      | **34.8%**                                    |
@@ -207,7 +212,9 @@ Damage (produced by [grade_logs.py](scripts/grade_logs.py)) is defined as the Li
 best move; 0pp is engine-perfect, <=5pp is
 within [Stockfish's noise floor](https://chess.stackexchange.com/questions/38860/for-fixed-depth-search-how-much-is-the-efficiency-different-between-odd-and-eve),
 ~47.5pp is an even game thrown into a forced mate, larger values would be the difference from the win% the best move
-would have given them. Damage cell notation is `mean (share of suggestions within 5pp of best, n graded)`. Every table
+would have given them. Damage cell notation is `mean (share of suggestions within 5pp of best, n graded)`. A legal
+`BEST_MOVE` cell's "of answered" figure divides by the rows whose output had a `BEST_MOVE` line the parser could read,
+which is a different count from the format-failure row (that one counts missing verdict lines). Every table
 above ran on golden v1
 and regrades with `--golden golden/v1/golden_engine.csv`.
 
@@ -242,12 +249,12 @@ Compared with Opus, Sonnet 4.6 with no thinking performed the best with all samp
 5% of the cost of Opus. The question remaining is, do these inferior models perform at a similar level
 to the frontier models once they're grounded?
 
-### Instrument v3 · golden v2 · no tools (2026-09-08)
+### Instrument v3 · golden v2 · no tools · thinking off (2026-09-08)
 
 The instrument is `Task(version=3)` with `tool_use=none`: the prompt is byte-identical to v2, the version bump only
 introduces the task parameter that the tool arms will use. These are the no-tool baselines on golden v2 that every
 grounded column will be read against. Logs live under `logs/golden-v2/`. Damage cells regrade with the default
-reference (golden v2); the golden v1 damage cells in the v2 table above still take
+reference (golden v2); the golden v1 damage cells in the two tables above still take
 `--golden golden/v1/golden_engine.csv`.
 
 |                                                                                                | Haiku 4.5          | Sonnet 4.6              |

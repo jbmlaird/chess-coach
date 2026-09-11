@@ -13,9 +13,8 @@ matplotlib.use("svg")
 matplotlib.rcParams["svg.hashsalt"] = "chess-coach"  # deterministic element ids: regenerating gives identical bytes
 import matplotlib.pyplot as plt  # noqa: E402
 
-from render_results import ARM, TABLES, TOTAL, column  # noqa: E402
+from render_results import ARM, REPO, TABLES, TOTAL, column  # noqa: E402
 
-REPO = Path(__file__).parent.parent
 TABLE = TABLES["v3"]
 METRICS = {"blunder_recall": f"Blunder recall\n({ARM['blunder']} blunder rows)",
            "best_recall": f"Best-move recall\n({ARM['best']} best rows)",
@@ -26,7 +25,7 @@ COLOURS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4
 
 
 def main(output: Path) -> None:
-    runs = {title: column(log, TABLE.golden).m for title, log in TABLE.columns.items()}
+    runs = {title: column(log).m for title, log in TABLE.columns.items()}
     fig, ax = plt.subplots(figsize=(8, 4.2))
     width = 0.8 / len(runs)
     for i, (name, m) in enumerate(runs.items()):

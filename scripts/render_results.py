@@ -9,25 +9,26 @@ tests/test_render_results.py asserts README.md contains each rendered table verb
 import statistics
 import sys
 from dataclasses import dataclass
-from functools import cached_property, lru_cache
+from functools import cache, cached_property
 from pathlib import Path
 
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 import calculate_metrics  # noqa: E402
 import grade_logs  # noqa: E402
+from calculate_metrics import ARM_SIZES as ARM, TOTAL  # noqa: E402
 from engine import NOISE_FLOOR_PP  # noqa: E402
 
 LOGS = REPO / "logs"
-ARM = calculate_metrics.ARM_SIZES
-TOTAL = sum(ARM.values())
 
 
 class Column:
     """One run: the metrics script's numbers, and the grader's only if a row asks."""
 
-    def __init__(self, log: Path, golden: str):
-        self.log, self.golden = log, golden
+    def __init__(self, log: str):
+        self.log = LOGS / log
+        # the golden set a run used is the first directory of its log path (logs/golden-vN/...)
+        self.golden = REPO / "golden" / log.split("/")[0].removeprefix("golden-") / "golden_engine.csv"
 
     @cached_property
     def m(self) -> dict:
@@ -35,12 +36,10 @@ class Column:
 
     @cached_property
     def g(self) -> dict:
-        return grade_logs.grade(self.log, REPO / self.golden / "golden_engine.csv")
+        return grade_logs.grade(self.log, self.golden)
 
 
-@lru_cache(maxsize=None)
-def column(log: str, golden: str) -> Column:
-    return Column(LOGS / log, golden)
+column = cache(Column)  # one Column per log: a run shared by several tables (and the chart) is read once
 
 
 def pct(x: float) -> str:
@@ -60,6 +59,15 @@ def damage(values: list[float], share: bool) -> tuple:
             else f"{mean:.1f}pp (n={len(values)})"), mean
 
 
+def rate(key: str):
+    """Cell for a 0-1 metric: the percentage, keyed on the raw value."""
+    return lambda c: (pct(c.m[key]), c.m[key])
+
+
+def unplayable(c: Column) -> tuple:
+    return f"{c.m['refutation_unplayable']}/{ARM['blunder']}", c.m["refutation_unplayable"]
+
+
 def legal(c: Column) -> tuple:
     rate = c.m["legal_move_accuracy"]
     answered = TOTAL - c.m["legal_move_blunder_parse_error"] - c.m["legal_move_best_parse_error"]
@@ -68,22 +76,18 @@ def legal(c: Column) -> tuple:
 
 
 # (row label, cell function -> (text, sort key), which direction is better for bolding)
-ROWS = [
-    ("Verdict + refutation accuracy (overall)",
-     lambda c: (pct(c.m["ground_truth_accuracy"]), c.m["ground_truth_accuracy"]), "high"),
+ROWS = (
+    ("Verdict + refutation accuracy (overall)", rate("ground_truth_accuracy"), "high"),
     ("- blunder arm / best arm",
      lambda c: (f"{pct(c.m['ground_truth_blunder_accuracy'])} / {pct(c.m['ground_truth_best_accuracy'])}", None), None),
-    ("Blunder class - recall (caught real blunders)", lambda c: (pct(c.m["blunder_recall"]), c.m["blunder_recall"]), "high"),
-    ("Blunder class - precision (calls that were right)",
-     lambda c: (pct(c.m["blunder_precision"]), c.m["blunder_precision"]), "high"),
-    ("Best class - recall (endorsed real best moves)", lambda c: (pct(c.m["best_recall"]), c.m["best_recall"]), "high"),
-    ("Best class - precision (endorsements right)", lambda c: (pct(c.m["best_precision"]), c.m["best_precision"]), "high"),
+    ("Blunder class - recall (caught real blunders)", rate("blunder_recall"), "high"),
+    ("Blunder class - precision (calls that were right)", rate("blunder_precision"), "high"),
+    ("Best class - recall (endorsed real best moves)", rate("best_recall"), "high"),
+    ("Best class - precision (endorsements right)", rate("best_precision"), "high"),
     ('Best class - mean damage of suggested "improvements" (excludes correct endorsements)',
      lambda c: damage(c.g["damages"][("best", False)], share=False), "low"),
-    ("Substantiation (correct blunder calls backing the certified refutation)",
-     lambda c: (pct(c.m["substantiation"]), c.m["substantiation"]), "high"),
-    ("Unplayable refutations (illegal, invalid or ambiguous)",
-     lambda c: (f"{c.m['refutation_unplayable']}/{ARM['blunder']}", c.m["refutation_unplayable"]), "low"),
+    ("Substantiation (correct blunder calls backing the certified refutation)", rate("substantiation"), "high"),
+    ("Unplayable refutations (illegal, invalid or ambiguous)", unplayable, "low"),
     ("Legal `BEST_MOVE` suggestions", legal, "high"),
     ("Invalid `BEST_MOVE` answers (of which a lowercase piece letter)",
      lambda c: (f"{c.m['invalid_best_moves']}/{TOTAL} ({c.m['lowercase_piece']})", c.m["invalid_best_moves"]), "low"),
@@ -95,24 +99,20 @@ ROWS = [
      lambda c: count(c.m["ground_truth_blunder_abstained"] + c.m["ground_truth_blunder_missing_refutation"]
                      + c.m["ground_truth_best_parse_error"] - sum(c.m["empty_output"].values())), "low"),
     ("Measured cost (full run)", lambda c: (f"~${c.m['cost']:.2f}", c.m["cost"]), "low"),
-]
-INVALID_ROWS = [
-    ("Legal `BEST_MOVE` suggestions", lambda c: (pct(c.m["legal_move_accuracy"]), None), None),
+)
+INVALID_ROWS = (  # no "better" direction: nothing is bolded, so the sort keys are ignored
+    ("Legal `BEST_MOVE` suggestions", rate("legal_move_accuracy"), None),
     ("Invalid `BEST_MOVE` answers", lambda c: (f"{c.m['invalid_best_moves']}/{TOTAL}", None), None),
     ("- of which a lowercase piece letter", lambda c: (str(c.m["lowercase_piece"]), None), None),
-    ("Unplayable refutations", lambda c: (f"{c.m['refutation_unplayable']}/{ARM['blunder']}", None), None),
-]
+    ("Unplayable refutations", unplayable, None),
+)
 
 
 @dataclass(frozen=True)
 class Table:
     heading: str
-    golden: str
     columns: dict  # column title -> log path under logs/
-    rows: list = None
-
-    def __post_init__(self):
-        object.__setattr__(self, "rows", self.rows or ROWS)
+    rows: tuple = ROWS
 
 
 HAIKU_SAN = "golden-v1/haiku-4-5/2026-08-18T22-27-12-00-00_Positions_3ZCkX5hNDqYXoMaqmhWacC.eval"
@@ -127,15 +127,15 @@ HAIKU_V2 = "golden-v2/haiku-4-5/2026-09-08T12-50-15-00-00_Positions_HFFMrFK37edc
 SONNET_V2 = "golden-v2/sonnet-4-6/2026-09-08T12-51-04-00-00_Positions_BT4gKBq5Zio6DpXCrg8En4.eval"
 
 TABLES = {
-    "baseline": Table("### Instrument v0 · golden v1 · no tools · SAN prompt (2026-08-18/19)", "golden/v1",
+    "baseline": Table("### Instrument v0 · golden v1 · no tools · SAN prompt (2026-08-18/19)",
                       {"Haiku 4.5": HAIKU_SAN, "Sonnet 4.6": SONNET_SAN}),
-    "v2": Table("### Instrument v2 · golden v1 · no tools (2026-08-20/21)", "golden/v1",
+    "v2": Table("### Instrument v2 · golden v1 · no tools (2026-08-20/21)",
                 {"Haiku 4.5": HAIKU_UCI, "Haiku 4.5 (thinking, 42k `max_tokens`)": HAIKU_THINKING,
                  "Sonnet 4.6": SONNET_UCI, "Sonnet 4.6 (thinking, 42k `max_tokens`)": SONNET_THINKING,
                  "Opus 5 (thinking disabled)": OPUS_NO_THINKING, "Opus 5 (adaptive thinking, 32k `max_tokens`)": OPUS}),
-    "v3": Table("### Instrument v3 · golden v2 · no tools (2026-09-08)", "golden/v2",
+    "v3": Table("### Instrument v3 · golden v2 · no tools · thinking off (2026-09-08)",
                 {"Haiku 4.5": HAIKU_V2, "Sonnet 4.6": SONNET_V2}),
-    "invalid": Table("### Invalid best moves: Haiku's lowercase piece letters", "golden/v1",
+    "invalid": Table("### Invalid best moves: Haiku's lowercase piece letters",
                      {"Haiku 4.5, SAN prompt, golden v1 (no thinking)": HAIKU_SAN,
                       "Haiku 4.5, UCI prompt, golden v1 (no thinking)": HAIKU_UCI,
                       "Haiku 4.5, UCI prompt, golden v1 (thinking)": HAIKU_THINKING,
@@ -147,16 +147,16 @@ TABLES = {
 
 def render(table: Table) -> str:
     """The markdown table: best cell per row in bold (ties all bold), columns padded to width."""
-    cols = {title: column(log, table.golden) for title, log in table.columns.items()}
-    grid = []
+    cols = {title: column(log) for title, log in table.columns.items()}
+    grid = [[""] + list(cols)]
     for label, cell, better in table.rows:
-        cells = {title: cell(c) for title, c in cols.items()}
-        keys = [k for _, k in cells.values() if k is not None]
+        cells = [cell(c) for c in cols.values()]
+        keys = [k for _, k in cells if k is not None]
         best = (max if better == "high" else min)(keys) if better and keys else None
-        grid.append([label] + [f"**{text}**" if better and key == best else text for text, key in cells.values()])
-    widths = [max(len(row[i]) for row in [[""] + list(cols)] + grid) for i in range(len(cols) + 1)]
-    line = lambda row: "| " + " | ".join(cell.ljust(w) for cell, w in zip(row, widths)) + " |"
-    return "\n".join([line([""] + list(cols)), "|" + "|".join("-" * (w + 2) for w in widths) + "|"] + [line(r) for r in grid])
+        grid.append([label] + [f"**{text}**" if key is not None and key == best else text for text, key in cells])
+    widths = [max(map(len, col)) for col in zip(*grid)]
+    lines = ["| " + " | ".join(cell.ljust(w) for cell, w in zip(row, widths)) + " |" for row in grid]
+    return "\n".join([lines[0], "|" + "|".join("-" * (w + 2) for w in widths) + "|", *lines[1:]])
 
 
 if __name__ == "__main__":
