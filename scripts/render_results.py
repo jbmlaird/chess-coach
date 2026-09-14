@@ -16,6 +16,7 @@ REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 import calculate_metrics  # noqa: E402
 import grade_logs  # noqa: E402
+import tool_metrics  # noqa: E402
 from calculate_metrics import ARM_SIZES as ARM, TOTAL  # noqa: E402
 from engine import NOISE_FLOOR_PP  # noqa: E402
 
@@ -37,6 +38,10 @@ class Column:
     @cached_property
     def g(self) -> dict:
         return grade_logs.grade(self.log, self.golden)
+
+    @cached_property
+    def t(self) -> dict:
+        return tool_metrics.tool_metrics(self.log)
 
 
 column = cache(Column)  # one Column per log: a run shared by several tables (and the chart) is read once
@@ -100,7 +105,30 @@ ROWS = (
                      + c.m["ground_truth_best_parse_error"] - sum(c.m["empty_output"].values())), "low"),
     ("Measured cost (full run)", lambda c: (f"~${c.m['cost']:.2f}", c.m["cost"]), "low"),
 )
-INVALID_ROWS = (  # no "better" direction: nothing is bolded, so the sort keys are ignored
+
+
+def tool_row(cell):
+    return lambda c: cell(c.t) if c.m["tool_use"] != "none" else ("-", None)
+
+
+def per_arm(key: str, denominator: str):
+    return tool_row(lambda t: (" . ".join(f"{t[arm][key]}/{t[arm][denominator]}" for arm in ARM),
+                               t["blunder"][key] / t["blunder"][denominator] if t["blunder"][denominator] else None))
+
+
+TOOL_ROWS = (
+    ("Tool errors (illegal moves or bad FENs sent to the engine), samples with one", per_arm("samples_with_error", "n"),
+     "low"),
+    ("Tool calls per sample", tool_row(lambda t: (" . ".join(f"{t[arm]['calls_mean']:.1f}" for arm in ARM), None)),
+     None),
+    ("Called the tool before answering", per_arm("answered_after_tool", "n"), "high"),
+    ("Relay fidelity (legal `BEST_MOVE` = engine best move for the queried position)", per_arm("relay", "relay_n"),
+     "high"),
+    ("Beyond-engine answers (legal moves the engine never returned)", per_arm("beyond_engine", "legal_fields"), None),
+    ("Frame errors (opponent's reply reported as the student's move)",
+     tool_row(lambda t: (str(t["blunder"]["frame_errors"]), t["blunder"]["frame_errors"])), "low"),
+)
+INVALID_ROWS = (
     ("Legal `BEST_MOVE` suggestions", rate("legal_move_accuracy"), None),
     ("Invalid `BEST_MOVE` answers", lambda c: (f"{c.m['invalid_best_moves']}/{TOTAL}", None), None),
     ("- of which a lowercase piece letter", lambda c: (str(c.m["lowercase_piece"]), None), None),
