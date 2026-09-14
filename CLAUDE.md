@@ -57,7 +57,9 @@ censored pilot turned a "$53" Opus run into $109.52.
 
 - The prompt, parsers, and scorers are the ruler. Any change to them bumps
   `Task(version=N)` in `move_review.py` and starts a new results column —
-  never compare across instrument versions without saying so.
+  never compare across instrument versions without saying so. The arm
+  (`tool_use`) is a task arg, not a version: one version's renderings are
+  compared as (task_version, tool_use) columns and never mixed.
 - Strict parsing is the contract: format noncompliance scores as failure.
   Never make the move/verdict parsers charitable (prose scanning was tried,
   rejected: chess prose is full of square names that parse as moves).
@@ -65,8 +67,8 @@ censored pilot turned a "$53" Opus run into $109.52.
   nodes, fresh `ucinewgame` per call — results are byte-reproducible). The
   model-facing MCP tool runs the same `Engine.grader()` preset (a test pins
   the grader's provenance to every `golden/*/golden_engine.meta.json`);
-  tool-arm runs record the tool's `engine.provenance` in their sidecar like
-  any other engine run. A weaker tool, if ever wanted, gets a new preset -
+  tool-arm runs record the tool's `engine.provenance` in the log's
+  `eval.metadata.tool_engine`, and grading refuses a mismatch. A weaker tool, if ever wanted, gets a new preset -
   the grader never changes.
 - Damage/quality aggregation happens in win% space (Lichess model, ±1000cp
   clamp), never by averaging raw centipawns (±10000 mate sentinel).
@@ -84,7 +86,7 @@ censored pilot turned a "$53" Opus run into $109.52.
   pins (`tests/test_calculate_metrics.py`).
 - Table headings carry all three dimensions: instrument version, golden
   version, arm (`Instrument v3 · golden v2 · no tools`). Logs live at
-  `logs/golden-v<N>/<model>[-thinking|-no-thinking][-tool-optional|-tool-required]/`,
+  `logs/golden-v<N>/<model>[-thinking|-no-thinking][-tool-silent|-tool-optional|-tool-required]/`,
   one committed run per directory; the golden version a run graded against is
   read from that path.
 - Quality stats condition on legal answers only: always print/quote the

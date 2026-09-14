@@ -41,7 +41,7 @@ CACHE_PATH = REPO / "graded_moves_cache.csv"
 STILL_WINNING_THRESHOLD_PCT = 70.0
 
 
-def load_reference(golden: Path) -> tuple[dict[str, dict], set[str]]:
+def load_reference(golden: Path) -> tuple[dict[str, dict], set[str], dict]:
     meta_path = golden.with_suffix(".meta.json")
     meta = json.loads(meta_path.read_text())
     candidates_meta = json.loads((golden.parent / "golden_candidates.meta.json").read_text())
@@ -56,7 +56,7 @@ def load_reference(golden: Path) -> tuple[dict[str, dict], set[str]]:
         f"expected 250 reference rows, got {len(reference)} (meta says {meta['rows']})"
 
     already_lost = {row["puzzle_id"] for row in meta["audit"]["already_lost_before"]["rows"]}
-    return reference, already_lost
+    return reference, already_lost, meta["engine"]
 
 
 def load_cache(engine_provenance: dict) -> dict[tuple[str, str, str], tuple[int, int | None]]:
@@ -127,8 +127,13 @@ def resolve_log_file(path: Path) -> Path:
 
 def grade(log_file: Path, golden: Path) -> dict:
     """Every damage and refutation figure for one run, keyed as report() takes them."""
-    reference, already_lost = load_reference(golden)
+    reference, already_lost, ruler = load_reference(golden)
     log = read_eval_log(log_file, exclude_fields={"messages", "events", "store", "attachments"})
+    if log.eval.task_args.get("tool_use", "none") != "none":
+        tool_engine = log.eval.metadata["tool_engine"]
+        if {**tool_engine, "path": None} != {**ruler, "path": None}:
+            sys.exit(f"{log_file.name}: the model's tool ran {tool_engine} but the reference is {ruler} "
+                     f"- oracle and ruler must be the same instrument")
     model = log.eval.model
     samples = log.samples or []
     assert len(samples) == 250, f"expected 250 samples, got {len(samples)}"

@@ -1,12 +1,12 @@
 """Stockfish as an MCP tool - the eval's tool arm.
 
 Runs Engine.grader(), so the oracle's answers are the frozen reference's by
-construction. Speaks MCP over stdio: stdout is the protocol channel. Register
-with Inspect via mcp_server_stdio(command="uv", args=["run", "python",
-"stockfish_mcp.py"], cwd=<repo root>); stdio servers get a restricted
-environment, so pass env={"STOCKFISH_PATH": ...} if you rely on that override.
+construction. Speaks MCP over stdio: stdout is the protocol channel.
+move_review.SERVER is how Inspect launches it.
 """
 
+import json
+import sys
 from dataclasses import asdict
 
 import chess
@@ -39,5 +39,8 @@ def analyse(fen: str, moves: list[str] = []) -> dict:
 
 
 if __name__ == "__main__":
-    Engine.grader().close()  # no engine: die at spawn, not as per-call error text
+    with Engine.grader() as engine:  # no engine: die at spawn, not as per-call error text
+        if "--provenance" in sys.argv:  # what this process's engine is, for the eval log's metadata
+            print(json.dumps(engine.provenance))
+            sys.exit()
     mcp.run()

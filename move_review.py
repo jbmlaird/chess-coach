@@ -1,11 +1,21 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+
 import chess
 from inspect_ai import task, Task
 from inspect_ai.dataset import FieldSpec, csv_dataset
 from inspect_ai.scorer import Score, scorer, accuracy, stderr, Target, CORRECT, INCORRECT, NOANSWER, grouped
-from inspect_ai.solver import TaskState, prompt_template, generate
+from inspect_ai.solver import Generate, Solver, TaskState, generate, prompt_template, solver
+from inspect_ai.tool import mcp_connection, mcp_server_stdio
+from mcp.client.stdio import get_default_environment
 
+from engine import STOCKFISH_PATH
 from ground_truth_parser import Outcome as GroundTruthOutcome, parse_ground_truth
 from move_parser import Outcome as MoveParserOutcome, parse_move_field
+
+HERE = Path(__file__).parent
 
 METADATA_FIELDS = ["FEN", "PlayedMove", "GroundTruth", "Arm", "Category", "Band", "Rating", "Continuation"]
 
@@ -51,6 +61,26 @@ EXPLANATION: <two or three sentences aimed at a club player. Name the
 concrete tactic or positional point at stake - the specific piece,
 square or line - rather than a general principle.>
 """
+
+TOOL_PARAGRAPH = """You also have a tool, analyse(fen, moves), which returns Stockfish's
+verdict on the position reached by playing moves (UCI, in order) from
+fen: its best move, principal variation, score and any forced mate, all
+from the perspective of the side to move in that resulting position.
+{call}
+Your final message must be the answer in the format below and nothing
+else.
+
+"""
+CALL_SENTENCE = {"optional": "You may call it as often as you like before answering.",
+                 "required": "Call it at least once before you answer."}
+ARMS = ("none", "silent", "optional", "required")
+
+
+def prompt(tool_use: str) -> str:
+    if tool_use not in CALL_SENTENCE:
+        return PROMPT
+    paragraph = TOOL_PARAGRAPH.replace("{call}", CALL_SENTENCE[tool_use])
+    return PROMPT.replace("Then respond in exactly", paragraph + "Then respond in exactly")
 
 
 @scorer(metrics=[grouped(accuracy(), "Arm"),
@@ -121,11 +151,35 @@ def ground_truth():
     return score
 
 
+SERVER = dict(command=sys.executable, args=[str(HERE / "stockfish_mcp.py")], cwd=HERE,
+              env={"STOCKFISH_PATH": STOCKFISH_PATH or ""})
+
+
+def tool_provenance() -> dict:
+    run = subprocess.run([SERVER["command"], *SERVER["args"], "--provenance"], cwd=SERVER["cwd"],
+                         env={**get_default_environment(), **SERVER["env"]},
+                         stdout=subprocess.PIPE, text=True, check=True)
+    return json.loads(run.stdout)
+
+
+@solver
+def grounded() -> Solver:
+    """The tool loop with one MCP server per sample, connected for the whole sample: without the held
+    connection Inspect spawns a fresh server (and engine) for every tool call."""
+    server = mcp_server_stdio(name="stockfish", **SERVER)
+
+    async def solve(state: TaskState, generate: Generate) -> TaskState:
+        async with mcp_connection([server]):
+            state.tools = await server.tools()
+            return await generate(state)
+
+    return solve
+
+
 @task
 def positions(tool_use: str = "none") -> Task:
-    # none | optional | required; the tool arms land with the Stockfish wiring
-    if tool_use != "none":
-        raise ValueError(f"tool_use={tool_use!r}: only 'none' is wired yet")
+    if tool_use not in ARMS:
+        raise ValueError(f"tool_use must be one of {ARMS}, not {tool_use!r}")
     return Task(
         name='Positions',
         version=3,
@@ -137,6 +191,9 @@ def positions(tool_use: str = "none") -> Task:
                 metadata=METADATA_FIELDS,
             )
         ),
-        solver=[prompt_template(PROMPT), generate()],
+        solver=[prompt_template(prompt(tool_use)), grounded() if tool_use != "none" else generate()],
         scorer=[legal_move(), ground_truth()],
+        turn_limit=8,  # a faithful sample needs 2-3 generations; the 9th is billed and discarded
+        working_limit=1800,
+        metadata={"tool_engine": tool_provenance() if tool_use != "none" else None},
     )

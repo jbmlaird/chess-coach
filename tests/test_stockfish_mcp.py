@@ -1,8 +1,8 @@
 """Tests for the Stockfish MCP tool. Chess fixtures reuse positions test_engine.py
 already proves with the pinned engine - no new chess claims are made here."""
 
+import hashlib
 import json
-import os
 import subprocess
 import sys
 import threading
@@ -16,6 +16,7 @@ from mcp.client.stdio import stdio_client
 from mcp.types import LATEST_PROTOCOL_VERSION
 
 from engine import Engine, MATE_SCORE_CP, STOCKFISH_PATH
+from move_review import SERVER as LAUNCH
 from stockfish_mcp import analyse
 
 SERVER = Path(__file__).parent.parent / "stockfish_mcp.py"
@@ -66,14 +67,16 @@ def test_rejects_unusable_input(fen, moves, message):
 @needs_stockfish
 @pytest.mark.anyio
 async def test_serves_analyse_over_mcp_stdio():
-    params = StdioServerParameters(command=sys.executable, args=[str(SERVER)],
-                                   env={**os.environ, "STOCKFISH_PATH": STOCKFISH_PATH})
-    async with stdio_client(params) as streams, ClientSession(*streams) as session:
+    # launched exactly as the eval launches it, under the SDK's restricted environment
+    async with stdio_client(StdioServerParameters(**LAUNCH)) as streams, ClientSession(*streams) as session:
         await session.initialize()
         tools = await session.list_tools()
         good = await session.call_tool("analyse", {"fen": WJ3VH_FEN, "moves": ["b3c4"]})
         bad = await session.call_tool("analyse", {"fen": WJ3VH_FEN, "moves": ["e2e5"]})
-    assert {t.name for t in tools.tools} == {"analyse"}
+    tool, = tools.tools
+    # the description and schema are prompt text the model reads: changing them is an instrument change
+    assert hashlib.sha256((tool.description + json.dumps(tool.inputSchema, sort_keys=True)).encode()).hexdigest() \
+        == "574fb3dfccfc49fbbecba0996def4d36b6786b72af39087ebd875925f6feafae"
     assert not good.isError
     assert json.loads(good.content[0].text)["best_move"] == "f8a3"
     assert bad.isError and "not legal" in bad.content[0].text

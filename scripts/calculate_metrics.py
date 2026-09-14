@@ -30,6 +30,7 @@ PRICES = {
     "anthropic/claude-haiku-4-5": (1.00, 5.00),
     "anthropic/claude-sonnet-4-6": (3.00, 15.00),
     "anthropic/claude-opus-5": (5.00, 25.00),
+    "mockllm/model": (0.00, 0.00),  # the pilot protocol's free first step
 }
 
 CLAIMED_BLUNDER_OUTCOMES = {
@@ -178,13 +179,6 @@ def metrics(path: Path, verbose: bool = False) -> tuple:
         "derived blunder-arm accuracy disagrees with the log's stored metric"
 
     (model, usage), = eval_log.stats.model_usage.items()
-    if model not in PRICES:
-        raise ValueError(f"no pricing for {model} - add it to PRICES")
-    input_rate, output_rate = PRICES[model]
-    # cache writes bill at 1.25x the input rate, cache reads at 0.10x
-    billable_input = (usage.input_tokens
-                      + 1.25 * (usage.input_tokens_cache_write or 0)
-                      + 0.10 * (usage.input_tokens_cache_read or 0))
     return eval_log, {
         "legal_move_blunder_accuracy": legal_move_blunder_accuracy,
         "legal_move_best_accuracy": legal_move_best_accuracy,
@@ -207,9 +201,21 @@ def metrics(path: Path, verbose: bool = False) -> tuple:
         "refutation_unplayable": refutation_unplayable,
         "unfinished": dict(unfinished),
         "empty_output": empty_output,
-        "cost": billable_input / 1_000_000 * input_rate + usage.output_tokens / 1_000_000 * output_rate,
+        "cost": cost(model, usage),
         "model": model,
+        "tool_use": eval_log.eval.task_args.get("tool_use", "none"),
     }
+
+
+def cost(model: str, usage) -> float:
+    if model not in PRICES:
+        raise ValueError(f"no pricing for {model} - add it to PRICES")
+    input_rate, output_rate = PRICES[model]
+    # cache writes bill at 1.25x the input rate, cache reads at 0.10x
+    billable_input = (usage.input_tokens
+                      + 1.25 * (usage.input_tokens_cache_write or 0)
+                      + 0.10 * (usage.input_tokens_cache_read or 0))
+    return billable_input / 1_000_000 * input_rate + usage.output_tokens / 1_000_000 * output_rate
 
 
 def print_metrics(m: dict) -> None:
