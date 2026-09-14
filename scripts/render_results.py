@@ -55,13 +55,14 @@ def count(n: int) -> tuple:
     return (f"{n}/{TOTAL} ({100 * n / TOTAL:.1f}%)" if n else "0", n)
 
 
-def damage(values: list[float], share: bool) -> tuple:
-    if not values:
-        return "n=0", None
-    mean = statistics.fmean(values)
+def damage(values: list[float]) -> tuple:
+    return (f"{statistics.fmean(values):.1f}pp (n={len(values)})", statistics.fmean(values)) if values else ("n=0", None)
+
+
+def within_floor(values: list[float]) -> tuple:
+    """How many graded suggestions were as good as best play."""
     good = sum(v <= NOISE_FLOOR_PP for v in values)
-    return (f"{mean:.1f}pp ({100 * good / len(values):.0f}%, n={len(values)})" if share
-            else f"{mean:.1f}pp (n={len(values)})"), mean
+    return (f"{good}/{len(values)} ({100 * good / len(values):.0f}%)", good / len(values)) if values else ("n=0", None)
 
 
 def rate(key: str):
@@ -89,15 +90,17 @@ ROWS = (
     ("Blunder class - precision (calls that were right)", rate("blunder_precision"), "high"),
     ("Best class - recall (endorsed real best moves)", rate("best_recall"), "high"),
     ("Best class - precision (endorsements right)", rate("best_precision"), "high"),
-    ('Best class - mean damage of suggested "improvements" (excludes correct endorsements)',
-     lambda c: damage(c.g["damages"][("best", False)], share=False), "low"),
+    ('Best class - mean damage vs best play of suggested "improvements" (excludes correct endorsements)',
+     lambda c: damage(c.g["damages"][("best", False)]), "low"),
     ("Substantiation (correct blunder calls backing the certified refutation)", rate("substantiation"), "high"),
     ("Unplayable refutations (illegal, invalid or ambiguous)", unplayable, "low"),
     ("Legal `BEST_MOVE` suggestions", legal, "high"),
     ("Invalid `BEST_MOVE` answers (of which a lowercase piece letter)",
      lambda c: (f"{c.m['invalid_best_moves']}/{TOTAL} ({c.m['lowercase_piece']})", c.m["invalid_best_moves"]), "low"),
-    ("Suggested improvement damage (blunder arm, excludes rows where the model repeated the blunder)",
-     lambda c: damage(c.g["damages"][("blunder", False)], share=True), "low"),
+    ("Suggested improvement damage vs best play (blunder arm, legal alternatives to the blunder)",
+     lambda c: damage(c.g["damages"][("blunder", False)]), "low"),
+    ("- of which as good as best play (damage within the 5pp noise floor)",
+     lambda c: within_floor(c.g["damages"][("blunder", False)]), "high"),
     ("Unfinished samples (stop reason not `stop`)", lambda c: count(sum(c.m["unfinished"].values())), "low"),
     ("Empty outputs (whole budget spent thinking)", lambda c: count(sum(c.m["empty_output"].values())), "low"),
     ("Format failures (non-empty parse errors)",
