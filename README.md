@@ -306,7 +306,7 @@ noise for either model at n=250, and row-level comparisons between two runs are 
 
 ### Instrument v3 · golden v2 · Stockfish tool · Haiku 4.5 · thinking off (2026-09-14)
 
-`tool_use` is a new parameter of the same task with 3 options: `none` is the baseline above without using Stockfish,
+`tool_use` is a new parameter of the same task with 4 values: `none` is the baseline above without using Stockfish,
 `silent` provides the tool without reference in the prompt, `optional` and `required` add one paragraph ("You may call
 it as often as you like before answering." and "Call it at least once before you answer."). The tool is
 `analyse(fen, moves)`, served over MCP by [stockfish_mcp.py](stockfish_mcp.py), which runs the same `Engine.grader()`
