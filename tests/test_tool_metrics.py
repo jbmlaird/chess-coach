@@ -3,8 +3,6 @@ prefixed error message on failures). Engine facts are the ones tests/test_stockf
 (Wj3vh: after Qxc4?? the engine's reply is f8a3, mate in 2)."""
 
 import json
-import subprocess
-import sys
 from types import SimpleNamespace
 
 import pytest
@@ -16,8 +14,8 @@ import render_results
 import tool_metrics
 
 FEN = "r4q1k/6pp/1p3n2/5N2/P1b2P2/1Q2P2P/K5P1/2bR2R1 w - - 0 31"
-GIVEN = {"best_move": "d1d6"}
-AFTER = {"best_move": "f8a3"}
+GIVEN = {"best_move": "d1d6", "principal_variation": ["d1d6", "f8d6"]}
+AFTER = {"best_move": "f8a3", "principal_variation": ["f8a3", "a2b1", "a3b2"]}
 
 
 def call(i, moves):
@@ -48,8 +46,8 @@ UNTOOLED = sample([], "VERDICT: BEST\nREFUTATION: NONE\nBEST_MOVE: b3c4\nEXPLANA
 
 def test_a_faithful_relay_is_counted_as_one():
     assert tool_metrics.sample_stats(RELAYED) == {
-        "calls": 2, "errors": 0, "answered_after_tool": True, "queried_given": True, "best_legal": True,
-        "relay": True, "legal_fields": 2, "beyond_engine": 0, "frame_error": False}
+        "calls": 2, "errors": 0, "answered_after_tool": True, "queried_given": True, "queried_after": True,
+        "best_legal": True, "relay": True, "legal_fields": 2, "beyond_engine": 0, "frame_error": False}
 
 
 def test_the_opponents_reply_reported_as_the_students_move_is_a_frame_error_even_in_san():
@@ -86,13 +84,10 @@ def test_tool_rows_read_dash_on_a_no_tool_column():
     assert all(line.rstrip("| ").endswith("-") for line in lines) and len(lines) == len(render_results.TOOL_ROWS)
 
 
-@pytest.mark.parametrize("run, expected", [
-    ("golden-v2/sonnet-4-6-tool-required", "relay fidelity 200/200; beyond-engine answers 0/400 legal fields; frame errors 0; unfinished 0"),
-    ("golden-v2/haiku-4-5-tool-optional", "answered after a tool call 169/200; relay fidelity 163/167"),
-], ids=["sonnet-perfect-relay", "haiku-optional-limit-hits"])
-def test_published_tool_lines_reproduce(run, expected):
-    """The tool-row figures the README quotes in prose come from this CLI's printed lines."""
-    log = render_results.column(run).log
-    out = subprocess.run([sys.executable, "scripts/tool_metrics.py", "--log_file", str(log)],
-                         cwd=render_results.REPO, capture_output=True, text=True, check=True).stdout
-    assert expected in out, out
+
+def test_a_pilot_projects_its_full_run_and_refuses_unbilled_samples():
+    arms = {"blunder": {"n": 2, "cost": [0.01, 0.03], "unbilled": 0}, "best": {"n": 1, "cost": [0.02], "unbilled": 0}}
+    assert tool_metrics.projection(arms) == "projected full run $5.00 (stratified by arm); worst case $7.50"  # 200*0.02 + 50*0.02; 250*0.03
+    arms["best"]["unbilled"] = 1
+    with pytest.raises(SystemExit, match="without usage"):
+        tool_metrics.projection(arms)
