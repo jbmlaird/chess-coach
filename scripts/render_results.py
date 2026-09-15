@@ -27,7 +27,7 @@ class Column:
     """One run: the metrics script's numbers, and the grader's only if a row asks."""
 
     def __init__(self, log: str):
-        self.log = LOGS / log
+        self.log = grade_logs.resolve_log_file(LOGS / log)
         # the golden set a run used is the first directory of its log path (logs/golden-vN/...)
         self.golden = REPO / "golden" / log.split("/")[0].removeprefix("golden-") / "golden_engine.csv"
 
@@ -99,10 +99,10 @@ ROWS = (
      lambda c: (f"{c.m['invalid_best_moves']}/{TOTAL} ({c.m['lowercase_piece']})", c.m["invalid_best_moves"]), "low"),
     ("Suggested improvement damage vs best play (blunder arm, legal alternatives to the blunder)",
      lambda c: damage(c.g["damages"][("blunder", False)]), "low"),
-    ("- of which as good as best play (damage within the 5pp noise floor)",
+    ("- of which within engine noise of best play (damage of 5pp or less)",
      lambda c: within_floor(c.g["damages"][("blunder", False)]), "high"),
     ("Unfinished samples (stop reason not `stop`)", lambda c: count(sum(c.m["unfinished"].values())), "low"),
-    ("Empty outputs (whole budget spent thinking)", lambda c: count(sum(c.m["empty_output"].values())), "low"),
+    ("Empty outputs (no text in the final generation)", lambda c: count(sum(c.m["empty_output"].values())), "low"),
     ("Format failures (non-empty parse errors)",
      lambda c: count(c.m["ground_truth_blunder_abstained"] + c.m["ground_truth_blunder_missing_refutation"]
                      + c.m["ground_truth_best_parse_error"] - sum(c.m["empty_output"].values())), "low"),
@@ -128,8 +128,8 @@ TOOL_ROWS = (
     ("Relay fidelity (legal `BEST_MOVE` = engine best move for the queried position)", per_arm("relay", "relay_n"),
      "high"),
     ("Beyond-engine answers (legal moves the engine never returned)", per_arm("beyond_engine", "legal_fields"), None),
-    ("Frame errors (opponent's reply reported as the student's move)",
-     tool_row(lambda t: (str(t["blunder"]["frame_errors"]), t["blunder"]["frame_errors"])), "low"),
+    ("Frame errors (opponent's reply reported as the student's move, of samples that queried the position after it)",
+     per_arm("frame_errors", "frame_n"), "low"),
 )
 INVALID_ROWS = (
     ("Legal `BEST_MOVE` suggestions", rate("legal_move_accuracy"), None),
@@ -156,6 +156,20 @@ OPUS = "golden-v1/opus-5/2026-08-21T10-18-31-00-00_Positions_8XbGRba8CoJjq3Ywj48
 OPUS_NO_THINKING = "golden-v1/opus-5-no-thinking/2026-08-21T14-49-55-00-00_Positions_h9P5PVHV529gGusNguaTvZ.eval"
 HAIKU_V2 = "golden-v2/haiku-4-5/2026-09-08T12-50-15-00-00_Positions_HFFMrFK37edcScmKRHx8Ss.eval"
 SONNET_V2 = "golden-v2/sonnet-4-6/2026-09-08T12-51-04-00-00_Positions_BT4gKBq5Zio6DpXCrg8En4.eval"
+# the golden-v1 SAN and UCI runs share a directory, so the runs above name their files; a tool run is its directory
+HAIKU_SILENT = "golden-v2/haiku-4-5-tool-silent"
+HAIKU_OPTIONAL = "golden-v2/haiku-4-5-tool-optional"
+HAIKU_REQUIRED = "golden-v2/haiku-4-5-tool-required"
+SONNET_SILENT = "golden-v2/sonnet-4-6-tool-silent"
+SONNET_OPTIONAL = "golden-v2/sonnet-4-6-tool-optional"
+SONNET_REQUIRED = "golden-v2/sonnet-4-6-tool-required"
+
+
+def grounded(model: str, none: str, silent: str, optional: str, required: str) -> Table:
+    return Table(f"### Instrument v3 · golden v2 · Stockfish tool · {model} · thinking off (2026-09-14)",
+                 {"No tools": none, "Tool offered, unmentioned (`silent`)": silent,
+                  "Tool described (`optional`)": optional, "Tool required (`required`)": required}, ROWS + TOOL_ROWS)
+
 
 TABLES = {
     "baseline": Table("### Instrument v0 · golden v1 · no tools · SAN prompt (2026-08-18/19)",
@@ -166,6 +180,8 @@ TABLES = {
                  "Opus 5 (thinking disabled)": OPUS_NO_THINKING, "Opus 5 (adaptive thinking, 32k `max_tokens`)": OPUS}),
     "v3": Table("### Instrument v3 · golden v2 · no tools · thinking off (2026-09-08)",
                 {"Haiku 4.5": HAIKU_V2, "Sonnet 4.6": SONNET_V2}),
+    "haiku-grounded": grounded("Haiku 4.5", HAIKU_V2, HAIKU_SILENT, HAIKU_OPTIONAL, HAIKU_REQUIRED),
+    "sonnet-grounded": grounded("Sonnet 4.6", SONNET_V2, SONNET_SILENT, SONNET_OPTIONAL, SONNET_REQUIRED),
     "invalid": Table("### Invalid best moves: Haiku's lowercase piece letters",
                      {"Haiku 4.5, SAN prompt, golden v1 (no thinking)": HAIKU_SAN,
                       "Haiku 4.5, UCI prompt, golden v1 (no thinking)": HAIKU_UCI,

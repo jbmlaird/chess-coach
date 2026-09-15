@@ -14,6 +14,13 @@ answer is scored against Stockfish, never against the model's own chess judgemen
 - The "better move" they suggest instead is usually worse than the blunder: on blunder positions the suggested
   improvement gives away 37-40 win-probability points on average and only a quarter of suggestions are within engine
   noise of the best move. Between 28% and 45% of suggested moves are not even legal.
+- Grounding fixes both. Given Stockfish as a tool the same models reach 87.6% (Haiku) and 100.0% (Sonnet, 250/250)
+  verdict + refutation accuracy with the tool silently offered, for $3.59-6.90 a run across the three tool arms, and
+  their suggested improvements sit within engine noise of best play 97-100% of the time because they relay the engine's
+  move (fidelity 96-100%, no frame errors on any sample that queried the position after the move). What remains is tool
+  misuse: the engine rejected at least one of Haiku's calls on 27-43% of blunder rows, Haiku hit the eight-turn limit
+  on up to 15% of samples, and the wording that invited unlimited calls was the worst arm for Haiku and the costliest
+  for both.
 - Evaluation noise is measured, not assumed. Re-running an identical configuration nineteen days apart moved
   Haiku's legality rate by 8.6 points and flipped its verdict on 103 of 245 shared positions; the paired standard
   error is about 3-4 points, so single-run differences under 8 points are noise here.
@@ -22,10 +29,14 @@ answer is scored against Stockfish, never against the model's own chess judgemen
 - Long-thinking runs are a bad trade at this budget: Sonnet 4.6 with thinking spent its whole 42k-token budget and
   returned nothing on 45% of positions, for 23 times the cost of the same model without thinking.
 
-![Golden v2 baselines: blunder recall, best-move recall, substantiation and legal best-move rate for Haiku 4.5 and Sonnet 4.6](charts/golden-v2-baselines.svg)
+![Grounding on golden v2: for Haiku 4.5 and Sonnet 4.6, verdict + refutation accuracy, substantiation, blunder recall, best-move recall and legal best-move rate with no tools against the same prompt with the Stockfish tool silently offered; instrument v3, thinking off](charts/golden-v2-grounding.svg)
 
-The chart is drawn by [plot_results.py](scripts/plot_results.py) from the same numbers the tables are rendered from;
-`uv run python scripts/plot_results.py` regenerates it byte-for-byte, and CI fails if the committed SVG differs.
+The chart pairs each no-tool baseline with the `silent` tool arm, whose prompt is byte-identical. The request differs
+only by the tool definition and the eight-turn limit it needs, and the runs are six days apart, so each gap is the
+engine plus the run-to-run noise measured under the v3 table: Haiku's blunder recall (90.5 to 92.5) sits inside that
+band, every other bar clears it by 16 points or more. It is drawn by [plot_results.py](scripts/plot_results.py) from
+the same numbers the tables are rendered from; `uv run python scripts/plot_results.py` regenerates it byte-for-byte,
+and CI fails if the committed SVG differs.
 
 **How it's built**
 
@@ -47,8 +58,12 @@ The chart is drawn by [plot_results.py](scripts/plot_results.py) from the same n
   Full runs cost $1 (Haiku) to $5 (Sonnet); the three thinking and frontier runs that cost $100-110 each are in the
   tables as the reason the protocol exists.
 
-**The open question:** do the cheaper models reach the frontier model's numbers once they are grounded in the
-engine? The next column will answer it: the same eval with a Stockfish tool the model can call.
+**Answered:** yes, and past them. Grounded in the engine with the tool silently offered, Sonnet 4.6 scores 100.0% and
+Haiku 4.5 87.6% on verdict + refutation for $3.68-5.75 a run, against 34.8% for the frontier model with adaptive
+thinking and no tool at $109.52 (golden v1 and instrument v2, the only set it ran on; the prompt is byte-identical to
+v3, so this compares across sets, and its recall and precision are in the second table). Substantiation goes from 73.7%
+frontier to 91.9-100% grounded, legal suggestions from 82.8% to 95.6-100%. The next column is a self-hosted open
+model, a chess-post-trained Qwen2.5-7B served with vLLM, first without the tool and then with it.
 
 ## Background
 
@@ -152,13 +167,14 @@ blunder row clears the floor.
 | Legal `BEST_MOVE` suggestions                                                                     | 58.0%             | **68.8%**          |
 | Invalid `BEST_MOVE` answers (of which a lowercase piece letter)                                   | **0/250 (0)**     | **0/250 (0)**      |
 | Suggested improvement damage vs best play (blunder arm, legal alternatives to the blunder)        | 42.6pp (n=93)     | **38.3pp (n=105)** |
-| - of which as good as best play (damage within the 5pp noise floor)                               | 16/93 (17%)       | **21/105 (20%)**   |
+| - of which within engine noise of best play (damage of 5pp or less)                               | 16/93 (17%)       | **21/105 (20%)**   |
 | Unfinished samples (stop reason not `stop`)                                                       | **0**             | **0**              |
-| Empty outputs (whole budget spent thinking)                                                       | **0**             | **0**              |
+| Empty outputs (no text in the final generation)                                                   | **0**             | **0**              |
 | Format failures (non-empty parse errors)                                                          | **0**             | **0**              |
 | Measured cost (full run)                                                                          | **~$1.00**        | ~$4.04             |
 
-Logs for the golden v1 tables live in `logs/golden-v1/`, viewable with `uv run inspect view` from the root. The accuracy rows are pulled from the
+Logs for the golden v1 tables live in `logs/golden-v1/`, viewable with `uv run inspect view` from the root. The accuracy
+rows are pulled from the
 log metadata, the damage rows come from [grade_logs.py](scripts/grade_logs.py) (defined below the next table), and the
 rest of the metrics are calculated via the [calculate_metrics](scripts/calculate_metrics.py) script.
 
@@ -204,9 +220,9 @@ version stamp landed. "Instrument v2" names the prompt, parsers and scorers, not
 | Legal `BEST_MOVE` suggestions                                                                     | 47.2%         | 70.0%                                  | 72.0%          | 44.0% (80.9% of answered)               | 72.4% (95.8% of answered)  | **82.8% (96.3% of answered)**                |
 | Invalid `BEST_MOVE` answers (of which a lowercase piece letter)                                   | 30/250 (30)   | **0/250 (0)**                          | **0/250 (0)**  | 1/250 (1)                               | 1/250 (0)                  | **0/250 (0)**                                |
 | Suggested improvement damage vs best play (blunder arm, legal alternatives to the blunder)        | 38.6pp (n=63) | 41.6pp (n=81)                          | 38.5pp (n=117) | 31.1pp (n=50)                           | **13.1pp (n=56)**          | 20.3pp (n=70)                                |
-| - of which as good as best play (damage within the 5pp noise floor)                               | 13/63 (21%)   | 14/81 (17%)                            | 23/117 (20%)   | 17/50 (34%)                             | **37/56 (66%)**            | 39/70 (56%)                                  |
+| - of which within engine noise of best play (damage of 5pp or less)                               | 13/63 (21%)   | 14/81 (17%)                            | 23/117 (20%)   | 17/50 (34%)                             | **37/56 (66%)**            | 39/70 (56%)                                  |
 | Unfinished samples (stop reason not `stop`)                                                       | **0**         | **0**                                  | **0**          | 115/250 (46.0%)                         | 29/250 (11.6%)             | 37/250 (14.8%)                               |
-| Empty outputs (whole budget spent thinking)                                                       | **0**         | **0**                                  | **0**          | 113/250 (45.2%)                         | **0**                      | 35/250 (14.0%)                               |
+| Empty outputs (no text in the final generation)                                                   | **0**         | **0**                                  | **0**          | 113/250 (45.2%)                         | **0**                      | 35/250 (14.0%)                               |
 | Format failures (non-empty parse errors)                                                          | **0**         | **0**                                  | **0**          | 1/250 (0.4%)                            | 59/250 (23.6%)             | **0**                                        |
 | Measured cost (full run)                                                                          | **~$1.02**    | ~$9.73                                 | ~$4.70         | ~$110.28                                | ~$99.75                    | ~$109.52                                     |
 
@@ -214,7 +230,8 @@ Damage (produced by [grade_logs.py](scripts/grade_logs.py)) is defined as the Li
 best move; 0pp is engine-perfect, <=5pp is
 within [Stockfish's noise floor](https://chess.stackexchange.com/questions/38860/for-fixed-depth-search-how-much-is-the-efficiency-different-between-odd-and-eve),
 ~47.5pp is an even game thrown into a forced mate, larger values would be the difference from the win% the best move
-would have given them. Damage cells read `mean (n graded)`; the row beneath the blunder-arm one counts the graded suggestions inside that floor. A legal
+would have given them. Damage cells read `mean (n graded)`; the row beneath the blunder-arm one counts the graded
+suggestions inside that floor. A legal
 `BEST_MOVE` cell's "of answered" figure divides by the rows whose output had a `BEST_MOVE` line the parser could read,
 which is a different count from the format-failure row (that one counts missing verdict lines). Every table
 above ran on golden v1
@@ -237,7 +254,8 @@ adaptive thinking or a more powerful model is the main reason for this shift. Th
 A great example of exhausting the 42k `max_tokens` output cap (32k plus the 10k Inspect adds for medium reasoning
 effort): run `uv run inspect view` and open the link, take a look
 at
-`0F0X2` in the `logs/golden-v1/sonnet-4-6-thinking` folder: `Let me step back`, `This is getting tangled, so let me step back`,
+`0F0X2` in the `logs/golden-v1/sonnet-4-6-thinking` folder: `Let me step back`,
+`This is getting tangled, so let me step back`,
 `This is getting complicated, so let me step back`, `This line is getting tangled, so let me step back`,
 `Let me reconsider the position more practically`, `Stepping back from this deep line, I want to reconsider`,
 `Given the complexity, I'll step back and just evaluate the overall line`,
@@ -248,8 +266,11 @@ This isn't exclusive to thinking models, either. Opus 5 with no thinking also ha
 into a hole was done in the prose returned rather than in a separate reasoning section.
 
 Compared with Opus, Sonnet 4.6 with no thinking performed the best with all samples finishing, and reasonable metrics at
-5% of the cost of Opus. The question remaining is, do these inferior models perform at a similar level
-to the frontier models once they're grounded?
+5% of the cost of Opus. Grounded in the engine on golden v2 (the two tool tables below; Opus ran only on golden v1 with
+instrument v2, whose prompt is byte-identical, so this compares across sets) both cheaper models pass the frontier
+model's headline ungrounded numbers: overall 34.8% against 87.6-100.0%, best-move recall 62.0% against 86.0-100.0%,
+substantiation 73.7% against 91.9-100%, at 3-6% of its cost. Haiku does not beat it on unplayable refutations (6-10/200
+against 5/200) or format failures (9-38/250 against 0, its turn-limit hits).
 
 ### Instrument v3 · golden v2 · no tools · thinking off (2026-09-08)
 
@@ -273,9 +294,9 @@ reference (golden v2); the golden v1 damage cells in the two tables above still 
 | Legal `BEST_MOVE` suggestions                                                                     | 55.2%         | **72.4%**          |
 | Invalid `BEST_MOVE` answers (of which a lowercase piece letter)                                   | 32/250 (32)   | **1/250 (1)**      |
 | Suggested improvement damage vs best play (blunder arm, legal alternatives to the blunder)        | 40.2pp (n=84) | **36.7pp (n=112)** |
-| - of which as good as best play (damage within the 5pp noise floor)                               | 20/84 (24%)   | **27/112 (24%)**   |
+| - of which within engine noise of best play (damage of 5pp or less)                               | 20/84 (24%)   | **27/112 (24%)**   |
 | Unfinished samples (stop reason not `stop`)                                                       | **0**         | **0**              |
-| Empty outputs (whole budget spent thinking)                                                       | **0**         | **0**              |
+| Empty outputs (no text in the final generation)                                                   | **0**         | **0**              |
 | Format failures (non-empty parse errors)                                                          | **0**         | **0**              |
 | Measured cost (full run)                                                                          | **~$1.02**    | ~$4.70             |
 
@@ -289,6 +310,108 @@ cancelling). Two runs give one difference, not a distribution, so the honest sta
 script prints from those discordant rows: about 4pp (Haiku) and 3pp (Sonnet) on legality, 2.5-3pp on verdict +
 refutation. A single-run difference inside roughly twice that, 8pp on legality or 5pp on accuracy, is within sampling
 noise for either model at n=250, and row-level comparisons between two runs are close to meaningless.
+
+### Instrument v3 · golden v2 · Stockfish tool · Haiku 4.5 · thinking off (2026-09-14)
+
+`tool_use` is a new parameter of the same task with 4 values: `none` is the baseline above without using Stockfish,
+`silent` provides the tool without reference in the prompt, `optional` and `required` add one paragraph ("You may call
+it as often as you like before answering." and "Call it at least once before you answer."). The tool is
+`analyse(fen, moves)`, served over MCP by [stockfish_mcp.py](stockfish_mcp.py), which runs the same `Engine.grader()`
+that certified the golden set; every log records the tool's engine and [grade_logs.py](scripts/grade_logs.py) refuses to
+grade a mismatch. Each sample gets its own server for its whole life, may take at most eight turns (8 attempts/messages
+by the LLM) and runs ten samples wide. `required` is enforced by prompt only so every arm is the same request shape and
+any provider can run it.
+
+On a tool arm the two scorers measure whether the model copied the engine rather than whether it judged the position,
+so the standard rows are published only with the six tool rows beneath them, each cell reading `blunder arm . best
+arm`. [tool_metrics.py](scripts/tool_metrics.py) reads them from the transcripts. Two rows condition on opportunity:
+relay fidelity counts legal `BEST_MOVE` answers among samples that queried the student's position, and frame errors
+count samples that queried the position after the played move. A sample that hits the turn limit is scored on its last
+completed generation and counts as unfinished; the ninth generation is billed and discarded, and the cost row includes
+it. Such a sample also shows as a format failure or, when that last generation was a bare tool call, as an empty
+output.
+
+|                                                                                                               | No tools      | Tool offered, unmentioned (`silent`) | Tool described (`optional`) | Tool required (`required`) |
+|---------------------------------------------------------------------------------------------------------------|---------------|--------------------------------------|-----------------------------|----------------------------|
+| Verdict + refutation accuracy (overall)                                                                       | 12.8%         | 87.6%                                | 78.8%                       | **88.8%**                  |
+| - blunder arm / best arm                                                                                      | 8.0% / 32.0%  | 85.0% / 98.0%                        | 77.0% / 86.0%               | 87.5% / 94.0%              |
+| Blunder class - recall (caught real blunders)                                                                 | 90.5%         | 92.5%                                | 82.5%                       | **93.5%**                  |
+| Blunder class - precision (calls that were right)                                                             | 84.2%         | **100.0%**                           | 99.4%                       | 99.5%                      |
+| Best class - recall (endorsed real best moves)                                                                | 32.0%         | **98.0%**                            | 86.0%                       | 94.0%                      |
+| Best class - precision (endorsements right)                                                                   | 45.7%         | 87.5%                                | 93.5%                       | **97.9%**                  |
+| Best class - mean damage vs best play of suggested "improvements" (excludes correct endorsements)             | 70.8pp (n=20) | n=0                                  | **45.6pp (n=1)**            | n=0                        |
+| Substantiation (correct blunder calls backing the certified refutation)                                       | 8.8%          | 91.9%                                | 93.3%                       | **93.6%**                  |
+| Unplayable refutations (illegal, invalid or ambiguous)                                                        | 95/200        | 10/200                               | **6/200**                   | 8/200                      |
+| Legal `BEST_MOVE` suggestions                                                                                 | 55.2%         | **95.6% (99.2% of answered)**        | 84.4% (99.1% of answered)   | 93.2% (98.3% of answered)  |
+| Invalid `BEST_MOVE` answers (of which a lowercase piece letter)                                               | 32/250 (32)   | **0/250 (0)**                        | 1/250 (0)                   | 1/250 (0)                  |
+| Suggested improvement damage vs best play (blunder arm, legal alternatives to the blunder)                    | 40.2pp (n=84) | 1.1pp (n=183)                        | **0.1pp (n=164)**           | 0.6pp (n=185)              |
+| - of which within engine noise of best play (damage of 5pp or less)                                           | 20/84 (24%)   | 179/183 (98%)                        | **162/164 (99%)**           | 180/185 (97%)              |
+| Unfinished samples (stop reason not `stop`)                                                                   | **0**         | 9/250 (3.6%)                         | 37/250 (14.8%)              | 13/250 (5.2%)              |
+| Empty outputs (no text in the final generation)                                                               | **0**         | **0**                                | **0**                       | **0**                      |
+| Format failures (non-empty parse errors)                                                                      | **0**         | 9/250 (3.6%)                         | 38/250 (15.2%)              | 14/250 (5.6%)              |
+| Measured cost (full run)                                                                                      | **~$1.02**    | ~$3.68                               | ~$4.90                      | ~$3.59                     |
+| Tool errors (illegal moves or bad FENs sent to the engine), samples with one                                  | -             | 85/200 . 16/50                       | 77/200 . 22/50              | **53/200 . 9/50**          |
+| Tool calls per sample                                                                                         | -             | 4.9 . 3.6                            | 5.5 . 4.2                   | 3.9 . 2.8                  |
+| Called the tool before answering                                                                              | -             | **192/200 . 49/50**                  | 169/200 . 44/50             | 189/200 . 48/50            |
+| Relay fidelity (legal `BEST_MOVE` = engine best move for the queried position)                                | -             | 177/184 . 46/46                      | 163/167 . 42/43             | **181/184 . 46/46**        |
+| Beyond-engine answers (legal moves the engine never returned)                                                 | -             | 10/365 . 2/49                        | 4/326 . 0/44                | 2/365 . 1/47               |
+| Frame errors (opponent's reply reported as the student's move, of samples that queried the position after it) | -             | **0/193 . 0/48**                     | **0/190 . 0/41**            | **0/192 . 0/48**           |
+
+Haiku gains the most and loses the most to its own tool use. Verdict + refutation accuracy goes from 12.8% to 87.6%
+with the tool silently offered and 88.8% when required; legal suggestions from 55.2% to 84-96%; unplayable
+refutations from 95/200 to ten or fewer; and the suggested improvement, which gave away 40 points against best play
+without the tool, now sits within engine noise 97-99% of the time because it is the engine's move (relay fidelity
+96-98% on blunder rows). What it still gets wrong is mostly mechanical. The engine rejected at least one call on 53-85
+of 200 blunder rows (27-43%): a corrupted FEN (a rank with the wrong number of squares, the side not to move left in
+check, pawns on the back rank, a missing king) or an illegal move. It also sent positions the engine accepted but that
+are unreachable from the student's, which no row counts, and 9-37 samples ran into the turn limit, usually with the
+engine's answers already in the transcript. The rest is judgement: a few verdicts per arm contradict engine output the
+model had already received. The `optional` wording did worst where it decides the column: the most calls per sample
+(5.5), the most limit hits (37), the lowest accuracy (78.8%) and the highest cost ($4.90); the answers it did give were
+as good as the other arms'. An invitation to call "as often as you like" was taken literally.
+
+### Instrument v3 · golden v2 · Stockfish tool · Sonnet 4.6 · thinking off (2026-09-14)
+
+|                                                                                                               | No tools          | Tool offered, unmentioned (`silent`) | Tool described (`optional`) | Tool required (`required`) |
+|---------------------------------------------------------------------------------------------------------------|-------------------|--------------------------------------|-----------------------------|----------------------------|
+| Verdict + refutation accuracy (overall)                                                                       | 22.0%             | **100.0%**                           | 98.4%                       | **100.0%**                 |
+| - blunder arm / best arm                                                                                      | 19.0% / 34.0%     | 100.0% / 100.0%                      | 98.0% / 100.0%              | 100.0% / 100.0%            |
+| Blunder class - recall (caught real blunders)                                                                 | 84.0%             | **100.0%**                           | 98.0%                       | **100.0%**                 |
+| Blunder class - precision (calls that were right)                                                             | 83.6%             | **100.0%**                           | **100.0%**                  | **100.0%**                 |
+| Best class - recall (endorsed real best moves)                                                                | 34.0%             | **100.0%**                           | **100.0%**                  | **100.0%**                 |
+| Best class - precision (endorsements right)                                                                   | 34.7%             | **100.0%**                           | **100.0%**                  | **100.0%**                 |
+| Best class - mean damage vs best play of suggested "improvements" (excludes correct endorsements)             | **69.5pp (n=20)** | n=0                                  | n=0                         | n=0                        |
+| Substantiation (correct blunder calls backing the certified refutation)                                       | 22.6%             | **100.0%**                           | **100.0%**                  | **100.0%**                 |
+| Unplayable refutations (illegal, invalid or ambiguous)                                                        | 39/200            | **0/200**                            | **0/200**                   | **0/200**                  |
+| Legal `BEST_MOVE` suggestions                                                                                 | 72.4%             | **100.0%**                           | 98.4% (100.0% of answered)  | **100.0%**                 |
+| Invalid `BEST_MOVE` answers (of which a lowercase piece letter)                                               | 1/250 (1)         | **0/250 (0)**                        | **0/250 (0)**               | **0/250 (0)**              |
+| Suggested improvement damage vs best play (blunder arm, legal alternatives to the blunder)                    | 36.7pp (n=112)    | 0.1pp (n=200)                        | -0.1pp (n=196)              | **-0.1pp (n=200)**         |
+| - of which within engine noise of best play (damage of 5pp or less)                                           | 27/112 (24%)      | 198/200 (99%)                        | 195/196 (99%)               | **199/200 (100%)**         |
+| Unfinished samples (stop reason not `stop`)                                                                   | **0**             | **0**                                | 4/250 (1.6%)                | **0**                      |
+| Empty outputs (no text in the final generation)                                                               | **0**             | **0**                                | 3/250 (1.2%)                | **0**                      |
+| Format failures (non-empty parse errors)                                                                      | **0**             | **0**                                | 1/250 (0.4%)                | **0**                      |
+| Measured cost (full run)                                                                                      | **~$4.70**        | ~$5.75                               | ~$6.90                      | ~$5.76                     |
+| Tool errors (illegal moves or bad FENs sent to the engine), samples with one                                  | -                 | 19/200 . 13/50                       | 33/200 . 11/50              | **16/200 . 6/50**          |
+| Tool calls per sample                                                                                         | -                 | 3.8 . 2.7                            | 4.6 . 3.1                   | 3.4 . 2.3                  |
+| Called the tool before answering                                                                              | -                 | **200/200 . 50/50**                  | 196/200 . 50/50             | **200/200 . 50/50**        |
+| Relay fidelity (legal `BEST_MOVE` = engine best move for the queried position)                                | -                 | 198/199 . 50/50                      | **196/196 . 50/50**         | **200/200 . 50/50**        |
+| Beyond-engine answers (legal moves the engine never returned)                                                 | -                 | 1/400 . 0/50                         | 0/392 . 0/50                | 0/400 . 0/50               |
+| Frame errors (opponent's reply reported as the student's move, of samples that queried the position after it) | -                 | **0/199 . 0/39**                     | **0/200 . 0/39**            | **0/200 . 0/45**           |
+
+Sonnet with the tool is a faithful relay: 250/250 on both scorers with the tool silently offered and again when
+required, and the four misses under `optional` are all turn-limit hits. Relay fidelity is 198/199, 196/196 and 200/200
+on blunder rows and 50/50 on every best arm; the one exception misread which side the engine's score was for and
+answered a move well outside the noise floor. One answer in the three runs went beyond the engine (1/400 blunder-arm
+legal fields, silent arm), and suggested improvements sit within engine noise on 99-100% of rows. The engine rejected a
+call on 16-33 of 200 blunder rows (8-16.5%) and, except for three of the four `optional` limit hits, the model
+recovered within its turns. Cost rose from $4.70 to $5.75-6.90 a run; costs are as billed, and Sonnet's requests were
+mostly cache reads while Haiku's were almost entirely uncached input, so the Haiku figures are closer to list price. No
+frame errors on the samples that queried the position after the move (the row's denominator): the row measures the
+opponent's reply reported as the student's move, not misreadings of the score's perspective, which did occur in a few
+transcripts. Whether the tool description's perspective sentence prevented more of them is untested, since no arm ran
+without it.
+
+Together the six runs cost $30.58, the sum of the six cost cells.
 
 ### Invalid best moves: Haiku's lowercase piece letters
 
