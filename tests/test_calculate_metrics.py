@@ -7,6 +7,7 @@ import sys
 import pytest
 
 from render_results import HAIKU_UCI, HAIKU_V2, LOGS, OPUS, REPO, SONNET_UCI, SONNET_V2
+from render_results import column
 
 
 def run_metrics(*cli: str) -> str:
@@ -34,6 +35,15 @@ def run_metrics(*cli: str) -> str:
             "legal_move on shared rows: 177/245 -> 178/245 (lost 31, gained 32, paired se 3.2pp)",
             "ground_truth on shared rows: 53/245 -> 54/245 (lost 23, gained 24, paired se 2.8pp)",
         ], id="sonnet-replication-paragraph"),
+        pytest.param(["--log_file", str(column("golden-v2/haiku-4-5-tool-silent").log)], [
+            "ground_truth_accuracy: 0.876", "legal_move_accuracy: 0.956", "cost: $3.68",
+        ], id="haiku-grounded-prose"),
+        pytest.param(["--log_file", str(column("golden-v2/haiku-4-5-tool-optional").log)], [
+            "ground_truth_accuracy: 0.788", "unfinished samples (by stop_reason): {'tool_calls': 37}", "cost: $4.90",
+        ], id="haiku-optional-prose"),
+        pytest.param(["--log_file", str(column("golden-v2/sonnet-4-6-tool-silent").log)], [
+            "ground_truth_accuracy: 1.0", "legal_move_accuracy: 1.0", "cost: $5.75",
+        ], id="sonnet-grounded-prose"),
     ],
 )
 def test_published_numbers_reproduce(cli, expected_lines):

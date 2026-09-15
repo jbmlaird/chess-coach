@@ -27,7 +27,7 @@ class Column:
     """One run: the metrics script's numbers, and the grader's only if a row asks."""
 
     def __init__(self, log: str):
-        self.log = LOGS / log
+        self.log = grade_logs.resolve_log_file(LOGS / log)  # a file, or a directory holding exactly one run
         # the golden set a run used is the first directory of its log path (logs/golden-vN/...)
         self.golden = REPO / "golden" / log.split("/")[0].removeprefix("golden-") / "golden_engine.csv"
 
@@ -166,6 +166,14 @@ TABLES = {
                  "Opus 5 (thinking disabled)": OPUS_NO_THINKING, "Opus 5 (adaptive thinking, 32k `max_tokens`)": OPUS}),
     "v3": Table("### Instrument v3 · golden v2 · no tools · thinking off (2026-09-08)",
                 {"Haiku 4.5": HAIKU_V2, "Sonnet 4.6": SONNET_V2}),
+    "haiku-grounded": Table("### Instrument v3 · golden v2 · Stockfish tool · Haiku 4.5 · thinking off (2026-09-14)",
+                            {"No tools": HAIKU_V2, "Tool offered, unmentioned (`silent`)": "golden-v2/haiku-4-5-tool-silent",
+                             "Tool described (`optional`)": "golden-v2/haiku-4-5-tool-optional",
+                             "Tool required (`required`)": "golden-v2/haiku-4-5-tool-required"}, ROWS + TOOL_ROWS),
+    "sonnet-grounded": Table("### Instrument v3 · golden v2 · Stockfish tool · Sonnet 4.6 · thinking off (2026-09-14)",
+                             {"No tools": SONNET_V2, "Tool offered, unmentioned (`silent`)": "golden-v2/sonnet-4-6-tool-silent",
+                              "Tool described (`optional`)": "golden-v2/sonnet-4-6-tool-optional",
+                              "Tool required (`required`)": "golden-v2/sonnet-4-6-tool-required"}, ROWS + TOOL_ROWS),
     "invalid": Table("### Invalid best moves: Haiku's lowercase piece letters",
                      {"Haiku 4.5, SAN prompt, golden v1 (no thinking)": HAIKU_SAN,
                       "Haiku 4.5, UCI prompt, golden v1 (no thinking)": HAIKU_UCI,

@@ -80,6 +80,7 @@ def tool_metrics(path: Path) -> dict:
             "frame_errors": sum(t["frame_error"] for t in stats),
             "cost": [sample_cost(s, log.eval.model) for s in samples],
             "unfinished": sum(s.output.stop_reason != "stop" or s.limit is not None for s in samples),
+            "unbilled": sum(s.error is not None or s.model_usage.get(log.eval.model) is None for s in samples),
         }
     return arms
 
@@ -100,8 +101,9 @@ def main() -> None:
             f"relay fidelity {t['relay']}/{t['relay_n']}; beyond-engine answers {t['beyond_engine']}/{t['legal_fields']} legal fields; "
             f"frame errors {t['frame_errors']}; unfinished {t['unfinished']}")
     if sum(t["n"] for t in arms.values()) < sum(ARM_SIZES.values()):  # a pilot: project the full run
-        if any(t["unfinished"] for t in arms.values()):
-            sys.exit("pilot has unfinished samples - no projection (censored pilots bias low)")
+        # a turn-limited sample is fully billed (its discarded generation is in its usage); an errored one is not
+        if any(t["unbilled"] for t in arms.values()):
+            sys.exit("pilot has samples without usage - no projection (censored pilots bias low)")
         projected = sum(ARM_SIZES[arm] * sum(t["cost"]) / t["n"] for arm, t in arms.items() if t["n"])
         worst = sum(ARM_SIZES.values()) * max(c for t in arms.values() for c in t["cost"])
         print(f"projected full run ${projected:.2f} (stratified by arm); worst case ${worst:.2f}")

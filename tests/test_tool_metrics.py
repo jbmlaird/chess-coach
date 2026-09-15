@@ -3,7 +3,11 @@ prefixed error message on failures). Engine facts are the ones tests/test_stockf
 (Wj3vh: after Qxc4?? the engine's reply is f8a3, mate in 2)."""
 
 import json
+import subprocess
+import sys
 from types import SimpleNamespace
+
+import pytest
 
 from inspect_ai.model import ChatMessageAssistant, ChatMessageTool, ChatMessageUser, ModelOutput, ModelUsage
 from inspect_ai.tool import ToolCall, ToolCallError
@@ -80,3 +84,15 @@ def test_tool_rows_read_dash_on_a_no_tool_column():
     table = render_results.Table("### scratch", {"Haiku 4.5": render_results.HAIKU_V2}, render_results.TOOL_ROWS)
     lines = render_results.render(table).splitlines()[2:]
     assert all(line.rstrip("| ").endswith("-") for line in lines) and len(lines) == len(render_results.TOOL_ROWS)
+
+
+@pytest.mark.parametrize("run, expected", [
+    ("golden-v2/sonnet-4-6-tool-required", "relay fidelity 200/200; beyond-engine answers 0/400 legal fields; frame errors 0; unfinished 0"),
+    ("golden-v2/haiku-4-5-tool-optional", "answered after a tool call 169/200; relay fidelity 163/167"),
+], ids=["sonnet-perfect-relay", "haiku-optional-limit-hits"])
+def test_published_tool_lines_reproduce(run, expected):
+    """The tool-row figures the README quotes in prose come from this CLI's printed lines."""
+    log = render_results.column(run).log
+    out = subprocess.run([sys.executable, "scripts/tool_metrics.py", "--log_file", str(log)],
+                         cwd=render_results.REPO, capture_output=True, text=True, check=True).stdout
+    assert expected in out, out
