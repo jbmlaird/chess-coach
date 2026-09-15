@@ -1,0 +1,45 @@
+name: Publish logs
+
+# The Inspect log viewer, bundled with every committed log, as a public GitHub Pages site:
+# https://jbmlaird.github.io/chess-coach/ - regenerated on every push to main.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: "auto"
+
+      - name: Install the project
+        run: uv sync --locked
+
+      - name: Bundle the log viewer with the committed logs
+        run: uv run inspect view bundle --log-dir logs --output-dir site
+
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v5
