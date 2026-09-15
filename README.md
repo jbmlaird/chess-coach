@@ -48,6 +48,9 @@ and CI fails if the committed SVG differs.
 - Harness: [Inspect AI](https://inspect.aisi.org.uk) task in [move_review.py](move_review.py) with two scorers,
   legality and ground truth, and a strict output contract. The prompt, parsers and scorers are the instrument; any
   change bumps `Task(version=N)` and starts a new results column.
+- Logs: every run is committed under `logs/` and published as the Inspect log viewer at
+  https://jbmlaird.github.io/chess-coach/ by [a workflow](.github/workflows/pages.yml) that rebuilds it from the committed logs on
+  every merge; the sample links in this README point into it.
 - Grading: [certify_golden.py](scripts/certify_golden.py) freezes the reference evals,
   [grade_logs.py](scripts/grade_logs.py) scores suggested moves in Lichess win-probability space,
   [calculate_metrics.py](scripts/calculate_metrics.py) derives every table cell,
@@ -185,10 +188,10 @@ seem like the model is performing great without the best-class stats.
 When a model correctly calls a blunder, it can only name the punishing reply 11.8%/15.0% of the time.
 
 After the first run against Haiku & Sonnet, I noticed that the "best move" suggested by the LLM are legal but bad. For
-example, `0F0X2` suggested best move `Qd4` which immediately hangs the queen. In `nBP6h`, the refutation line doesn't
+example, [`0F0X2`](https://jbmlaird.github.io/chess-coach/#/logs/golden-v1%2Fhaiku-4-5%2F2026-08-18T22-27-12-00-00_Positions_3ZCkX5hNDqYXoMaqmhWacC.eval/samples/sample/0F0X2/1) suggested best move `Qd4` which immediately hangs the queen. In [`nBP6h`](https://jbmlaird.github.io/chess-coach/#/logs/golden-v1%2Fhaiku-4-5%2F2026-08-18T22-27-12-00-00_Positions_3ZCkX5hNDqYXoMaqmhWacC.eval/samples/sample/nBP6h/1), the refutation line doesn't
 show a move but instead shows `REFUTATION: The move wastes a chance; Black should have played Bxa1 to win White's
 bishop. After Bb2, White continues but Black has missed the decisive material advantage.` not honouring the prompt.
-`fMkW1` suggested move `Rc6+` which was ambiguous as either rook could move to c6 and give check. To address this,
+[`fMkW1`](https://jbmlaird.github.io/chess-coach/#/logs/golden-v1%2Fhaiku-4-5%2F2026-08-18T22-27-12-00-00_Positions_3ZCkX5hNDqYXoMaqmhWacC.eval/samples/sample/fMkW1/1) suggested move `Rc6+` which was ambiguous as either rook could move to c6 and give check. To address this,
 all moves need to be provided in UCI so this ambiguity can be removed.
 
 Sample [3hzja](https://lichess.org/training/3hzja) (best arm) shows why we measure both legality and ground truth.
@@ -254,7 +257,7 @@ adaptive thinking or a more powerful model is the main reason for this shift. Th
 A great example of exhausting the 42k `max_tokens` output cap (32k plus the 10k Inspect adds for medium reasoning
 effort): run `uv run inspect view` and open the link, take a look
 at
-`0F0X2` in the `logs/golden-v1/sonnet-4-6-thinking` folder: `Let me step back`,
+[`0F0X2`](https://jbmlaird.github.io/chess-coach/#/logs/golden-v1%2Fsonnet-4-6-thinking%2F2026-08-21T11-27-27-00-00_Positions_eim5RxFdeHyg87yjkwiFps.eval/samples/sample/0F0X2/1) in the `logs/golden-v1/sonnet-4-6-thinking` folder: `Let me step back`,
 `This is getting tangled, so let me step back`,
 `This is getting complicated, so let me step back`, `This line is getting tangled, so let me step back`,
 `Let me reconsider the position more practically`, `Stepping back from this deep line, I want to reconsider`,
@@ -365,7 +368,8 @@ without the tool, now sits within engine noise 97-99% of the time because it is 
 of 200 blunder rows (27-43%): a corrupted FEN (a rank with the wrong number of squares, the side not to move left in
 check, pawns on the back rank, a missing king) or an illegal move. It also sent positions the engine accepted but that
 are unreachable from the student's, which no row counts, and 9-37 samples ran into the turn limit, usually with the
-engine's answers already in the transcript. The rest is judgement: a few verdicts per arm contradict engine output the
+engine's answers already in the transcript ([`cjOIr`](https://jbmlaird.github.io/chess-coach/#/logs/golden-v2%2Fhaiku-4-5-tool-optional%2F2026-09-14T17-09-31-00-00_Positions_82SghKgWJi5rMoZ6xcWLVt.eval/samples/sample/cjOIr/1) under `optional` spends its
+nine turns proposing moves for a king that is in check). The rest is judgement: a few verdicts per arm contradict engine output the
 model had already received. The `optional` wording did worst where it decides the column: the most calls per sample
 (5.5), the most limit hits (37), the lowest accuracy (78.8%) and the highest cost ($4.90); the answers it did give were
 as good as the other arms'. An invitation to call "as often as you like" was taken literally.
@@ -400,7 +404,7 @@ as good as the other arms'. An invitation to call "as often as you like" was tak
 
 Sonnet with the tool is a faithful relay: 250/250 on both scorers with the tool silently offered and again when
 required, and the four misses under `optional` are all turn-limit hits. Relay fidelity is 198/199, 196/196 and 200/200
-on blunder rows and 50/50 on every best arm; the one exception misread which side the engine's score was for and
+on blunder rows and 50/50 on every best arm; the one exception ([`UQlwg`](https://jbmlaird.github.io/chess-coach/#/logs/golden-v2%2Fsonnet-4-6-tool-silent%2F2026-09-14T17-01-53-00-00_Positions_cTe9eraBrUSYDmQHAPfYfb.eval/samples/sample/UQlwg/1), silent arm) misread which side the engine's score was for and
 answered a move well outside the noise floor. One answer in the three runs went beyond the engine (1/400 blunder-arm
 legal fields, silent arm), and suggested improvements sit within engine noise on 99-100% of rows. The engine rejected a
 call on 16-33 of 200 blunder rows (8-16.5%) and, except for three of the four `optional` limit hits, the model
