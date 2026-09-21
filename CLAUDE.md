@@ -86,13 +86,20 @@ censored pilot turned a "$53" Opus run into $109.52.
   pins (`tests/test_calculate_metrics.py`).
 - Table headings carry all three dimensions: instrument version, golden
   version, arm (`Instrument v3 · golden v2 · no tools`). Logs live at
-  `logs/golden-v<N>/<model>[-thinking|-no-thinking][-tool-silent|-tool-optional|-tool-required]/`,
-  one committed run per directory; the golden version a run graded against is
-  read from that path.
+  `logs/golden-v<N>/<model>[-thinking|-no-thinking][-tool-silent|-tool-optional|-tool-required]/`
+  (self-hosted models by their served name, e.g. `qwen2-5-7b-instruct`), one
+  committed run per directory; the golden version a run graded against is read
+  from that path. Repeats of a published run, the same configuration re-run for
+  its spread, live under `<run dir>/repeats/<k>/`, one per directory;
+  `calculate_metrics.py --repeats` reports their mean and standard error and the
+  top-level run is the published column.
 - Quality stats condition on legal answers only: always print/quote the
   per-arm denominator (`n=63/200`). Never headline the blended blunder-arm
   damage (it mixes detection failures with suggestion quality and inverts
   model rankings).
+- Cost is as billed: API models by token at `PRICES`, self-hosted models by
+  the log's wall-clock time at the rental rate in `HOURLY`
+  (`scripts/calculate_metrics.py`); say which in any comparison.
 - Grounded (tool-arm) columns are published only with the tool-aware metrics
   beside them (tool errors, called-before-answer, relay fidelity, frame
   errors): on a tool arm `ground_truth` measures whether the model copied the
@@ -102,8 +109,10 @@ censored pilot turned a "$53" Opus run into $109.52.
 
 - The golden set never appears in training data, in any version: every
   training set is checked against `golden/*/golden_candidates.csv` by puzzle
-  ID and by FEN before use, and that check runs in CI once a training set is
-  committed.
+  ID and by position (`scripts/check_contamination.py`) before use, and that
+  check runs in CI once a training set is committed. A public checkpoint's
+  released data clears the same check before its column is published, and the
+  README records the dataset revision it was run against.
 
 ## Environment
 

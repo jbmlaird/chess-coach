@@ -314,6 +314,16 @@ script prints from those discordant rows: about 4pp (Haiku) and 3pp (Sonnet) on 
 refutation. A single-run difference inside roughly twice that, 8pp on legality or 5pp on accuracy, is within sampling
 noise for either model at n=250, and row-level comparisons between two runs are close to meaningless.
 
+Every run in this README sent the provider its default sampling: the requests carry `max_tokens` and nothing else, so
+temperature is 1.0, and the Anthropic API takes no seed. `calculate_metrics.py` prints each log's `sampling:` line from
+the request it actually made, with the model snapshot the provider answered with (Haiku reports
+`claude-haiku-4-5-20251001`; Sonnet reports only its alias). Measured directly on 2026-09-17: five repeats of the Haiku
+column, identical configuration and default sampling, sit
+under `logs/golden-v2/haiku-4-5/repeats/`, and `calculate_metrics.py --repeats` reports the spread over all six runs:
+verdict + refutation 13.0% (sd 1.2pp), legal `BEST_MOVE` 50.8% (sd 2.8pp), substantiation 10.6% (sd 1.5pp). The
+published column is the highest of the six on legality (55.2% against a mean of 50.8%), so a single run can sit a
+full standard deviation from its own mean; the six-run standard errors are 0.5pp on accuracy and 1.1pp on legality.
+
 ### Instrument v3 · golden v2 · Stockfish tool · Haiku 4.5 · thinking off (2026-09-14)
 
 `tool_use` is a new parameter of the same task with 4 values: `none` is the baseline above without using Stockfish,
