@@ -8,7 +8,7 @@ import pytest
 
 import calculate_metrics
 
-from render_results import HAIKU_OPTIONAL, HAIKU_UCI, HAIKU_V2, OPUS, REPO, SONNET_OPTIONAL, SONNET_UCI, SONNET_V2, column
+from render_results import HAIKU_OPTIONAL, HAIKU_SILENT, HAIKU_UCI, HAIKU_V2, OPUS, REPO, SONNET_OPTIONAL, SONNET_UCI, SONNET_V2, column
 
 
 def run_metrics(log: str, compare_to: str | None = None) -> str:
@@ -65,11 +65,20 @@ def test_a_self_hosted_model_bills_by_the_hour():
     assert calculate_metrics.cost("vllm/Qwen/Qwen2.5-7B-Instruct", None, hours=0.5) == 0.32
 
 
-def test_the_haiku_repeats_spread_reproduces():
-    """The README's measured-noise sentence quotes these three printed lines."""
-    out = subprocess.run([sys.executable, "scripts/calculate_metrics.py", "--log_file", str(column(HAIKU_V2).log), "--repeats"],
+@pytest.mark.parametrize("run, lines", [
+    (HAIKU_V2, ["ground_truth_accuracy over 6 runs: mean 13.0% sd 1.2pp se 0.5pp",
+                "legal_move_accuracy over 6 runs: mean 50.8% sd 2.8pp se 1.1pp",
+                "substantiation over 6 runs: mean 10.6% sd 1.5pp se 0.6pp"]),
+    (SONNET_V2, ["ground_truth_accuracy over 4 runs: mean 20.6% sd 2.8pp se 1.4pp",
+                 "legal_move_accuracy over 4 runs: mean 72.7% sd 0.9pp se 0.4pp",
+                 "substantiation over 4 runs: mean 19.4% sd 3.7pp se 1.8pp"]),
+    (HAIKU_SILENT, ["ground_truth_accuracy over 4 runs: mean 83.5% sd 2.8pp se 1.4pp",
+                    "legal_move_accuracy over 4 runs: mean 93.6% sd 1.5pp se 0.7pp",
+                    "substantiation over 4 runs: mean 89.9% sd 1.4pp se 0.7pp"]),
+], ids=["haiku-none", "sonnet-none", "haiku-silent"])
+def test_the_repeats_spread_reproduces(run, lines):
+    """The README's measured-noise table quotes these printed lines."""
+    out = subprocess.run([sys.executable, "scripts/calculate_metrics.py", "--log_file", str(column(run).log), "--repeats"],
                          cwd=REPO, capture_output=True, text=True, check=True).stdout
-    for line in ("ground_truth_accuracy over 6 runs: mean 13.0% sd 1.2pp se 0.5pp",
-                 "legal_move_accuracy over 6 runs: mean 50.8% sd 2.8pp se 1.1pp",
-                 "substantiation over 6 runs: mean 10.6% sd 1.5pp se 0.6pp"):
+    for line in lines:
         assert line in out, out

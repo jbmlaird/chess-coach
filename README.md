@@ -21,9 +21,10 @@ answer is scored against Stockfish, never against the model's own chess judgemen
   misuse: the engine rejected at least one of Haiku's calls on 27-43% of blunder rows, Haiku hit the eight-turn limit
   on up to 15% of samples, and the wording that invited unlimited calls was the worst arm for Haiku and the costliest
   for both.
-- Evaluation noise is measured, not assumed. Re-running an identical configuration nineteen days apart moved
-  Haiku's legality rate by 8.6 points and flipped its verdict on 103 of 245 shared positions; the paired standard
-  error is about 3-4 points, so single-run differences under 8 points are noise here.
+- Evaluation noise is measured, not assumed. Fourteen repeats of three columns put the run-to-run standard
+  deviation at 1-3 points on accuracy and 1-3 points on legality, so a gap between two single runs under about 8
+  points is noise here; grounding clears that bar by 70 points, and an earlier 8.6-point "improvement" turned out
+  to be one lucky run.
 - A notation contract exposes a model habit: under a UCI prompt, Haiku writes lowercase piece letters (`rd1`) on
   12% of answers, which the strict parser rejects by design
 - Long-thinking runs are a bad trade at this budget: Sonnet 4.6 with thinking spent its whole 42k-token budget and
@@ -317,12 +318,25 @@ noise for either model at n=250, and row-level comparisons between two runs are 
 Every run in this README sent the provider its default sampling: the requests carry `max_tokens` and nothing else, so
 temperature is 1.0, and the Anthropic API takes no seed. `calculate_metrics.py` prints each log's `sampling:` line from
 the request it actually made, with the model snapshot the provider answered with (Haiku reports
-`claude-haiku-4-5-20251001`; Sonnet reports only its alias). Measured directly on 2026-09-17: five repeats of the Haiku
-column, identical configuration and default sampling, sit
-under `logs/golden-v2/haiku-4-5/repeats/`, and `calculate_metrics.py --repeats` reports the spread over all six runs:
-verdict + refutation 13.0% (sd 1.2pp), legal `BEST_MOVE` 50.8% (sd 2.8pp), substantiation 10.6% (sd 1.5pp). The
-published column is the highest of the six on legality (55.2% against a mean of 50.8%), so a single run can sit a
-full standard deviation from its own mean; the six-run standard errors are 0.5pp on accuracy and 1.1pp on legality.
+`claude-haiku-4-5-20251001`; Sonnet reports only its alias).
+
+Run-to-run noise was then measured directly (2026-09-17 and 2026-09-21): identical configurations re-run under each
+column's `repeats/` directory, reported by `calculate_metrics.py --repeats` over the published run and its repeats.
+
+| column | runs | verdict + refutation | legal `BEST_MOVE` | substantiation |
+|---|---|---|---|---|
+| Haiku 4.5, no tools | 6 | 13.0% (sd 1.2pp) | 50.8% (sd 2.8pp) | 10.6% (sd 1.5pp) |
+| Sonnet 4.6, no tools | 4 | 20.6% (sd 2.8pp) | 72.7% (sd 0.9pp) | 19.4% (sd 3.7pp) |
+| Haiku 4.5, tool silently offered | 4 | 83.5% (sd 2.8pp) | 93.6% (sd 1.5pp) | 89.9% (sd 1.4pp) |
+
+Three things follow. A single run can sit a full standard deviation from its own mean: the published Haiku baseline is
+the highest of its six on legality (55.2% against 50.8%), and the published Haiku tool run the highest of its four on
+accuracy (87.6% against 83.5%). The difference between two single runs carries about 1.4 times the standard deviation,
+so a gap under roughly twice that is noise: the Haiku v1-to-v2 legality rise reported above (47.3% to 55.2%) is 3.5pp
+against the six-run mean and inside that band, while grounding (13.0% to 83.5% for Haiku) and the Haiku wording
+effect (`optional` at 78.8% against a silent-arm mean of 83.5% with sd 2.8pp) clear it. And the 50-row best arm cannot
+resolve differences under about 10pp (best-move recall sd 4.9pp for Haiku, 6.9pp for Sonnet). These repeats measure
+sampling noise on one day against one snapshot; they say nothing about drift between model versions.
 
 ### Instrument v3 · golden v2 · Stockfish tool · Haiku 4.5 · thinking off (2026-09-14)
 
