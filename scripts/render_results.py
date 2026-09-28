@@ -11,6 +11,7 @@ import sys
 from dataclasses import dataclass
 from functools import cache, cached_property
 from pathlib import Path
+from urllib.parse import quote
 
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
@@ -21,6 +22,12 @@ from calculate_metrics import ARM_SIZES as ARM, TOTAL  # noqa: E402
 from engine import NOISE_FLOOR_PP  # noqa: E402
 
 LOGS = REPO / "logs"
+VIEWER = "https://jbmlaird.github.io/chess-coach/#/logs/"  # the Inspect viewer GitHub Pages rebuilds from logs/
+
+
+def viewer(path: Path) -> str:
+    """A link into the published viewer for a committed log file or directory under logs/."""
+    return VIEWER + quote(path.relative_to(LOGS).as_posix(), safe="")
 
 
 class Column:
@@ -107,6 +114,7 @@ ROWS = (
      lambda c: count(c.m["ground_truth_blunder_abstained"] + c.m["ground_truth_blunder_missing_refutation"]
                      + c.m["ground_truth_best_parse_error"] - sum(c.m["empty_output"].values())), "low"),
     ("Measured cost (full run)", lambda c: (f"~${c.m['cost']:.2f}", c.m["cost"]), "low"),
+    ("Log (published viewer)", lambda c: (f"[{c.log.parent.relative_to(LOGS)} {c.log.name[:10]}]({viewer(c.log)})", None), None),
 )
 
 

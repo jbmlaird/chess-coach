@@ -15,7 +15,7 @@ from inspect_ai.log import read_eval_log
 
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
-from calculate_metrics import ARM_SIZES, cost  # noqa: E402
+from calculate_metrics import ARM_SIZES, HOURLY, cost  # noqa: E402
 from move_parser import Outcome, parse_move_field  # noqa: E402
 
 
@@ -115,7 +115,8 @@ def main() -> None:
             f"relay fidelity {t['relay']}/{t['relay_n']}; beyond-engine answers {t['beyond_engine']}/{t['legal_fields']} legal fields; "
             f"frame errors {t['frame_errors']}/{t['frame_n']}; unfinished {t['unfinished']}")
     if sum(t["n"] for t in arms.values()) < sum(ARM_SIZES.values()):  # a pilot
-        print(projection(arms))
+        print("self-hosted: cost is the run's wall-clock time at the hourly rate, not per sample" if e.model in HOURLY
+              else projection(arms))
 
 
 if __name__ == "__main__":
