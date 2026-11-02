@@ -3,8 +3,10 @@
 import argparse
 import json
 import re
+import statistics
 import sys
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 import math
@@ -31,6 +33,11 @@ PRICES = {
     "anthropic/claude-sonnet-4-6": (3.00, 15.00),
     "anthropic/claude-opus-5": (5.00, 25.00),
     "mockllm/model": (0.00, 0.00),  # the pilot protocol's free first step
+}
+# self-hosted models bill by the hour, not the token: the log's wall-clock time on the rented GPU
+HOURLY = {  # $/hour, GCP g2-standard-4 (one L4) spot, us-central1, September 2026
+    "vllm/Qwen/Qwen2.5-7B-Instruct": 0.64,
+    "vllm/lucasdino/Qwen2.5-7B-Chess-BestMoveBestLine-SFT": 0.64,
 }
 
 CLAIMED_BLUNDER_OUTCOMES = {
@@ -179,6 +186,7 @@ def metrics(path: Path, verbose: bool = False) -> tuple:
         "derived blunder-arm accuracy disagrees with the log's stored metric"
 
     (model, usage), = eval_log.stats.model_usage.items()
+    hours = (datetime.fromisoformat(eval_log.stats.completed_at) - datetime.fromisoformat(eval_log.stats.started_at)).total_seconds() / 3600
     return eval_log, {
         "legal_move_blunder_accuracy": legal_move_blunder_accuracy,
         "legal_move_best_accuracy": legal_move_best_accuracy,
@@ -201,21 +209,37 @@ def metrics(path: Path, verbose: bool = False) -> tuple:
         "refutation_unplayable": refutation_unplayable,
         "unfinished": dict(unfinished),
         "empty_output": empty_output,
-        "cost": cost(model, usage),
+        "cost": cost(model, usage, hours),
         "model": model,
         "tool_use": eval_log.eval.task_args.get("tool_use", "none"),
+        "path": path,
     }
 
 
-def cost(model: str, usage) -> float:
+def cost(model: str, usage, hours: float = 0.0) -> float:
+    if model in HOURLY:
+        return hours * HOURLY[model]
     if model not in PRICES:
-        raise ValueError(f"no pricing for {model} - add it to PRICES")
+        raise ValueError(f"no pricing for {model} - add it to PRICES or HOURLY")
     input_rate, output_rate = PRICES[model]
     # cache writes bill at 1.25x the input rate, cache reads at 0.10x
     billable_input = (usage.input_tokens
                       + 1.25 * (usage.input_tokens_cache_write or 0)
                       + 0.10 * (usage.input_tokens_cache_read or 0))
     return billable_input / 1_000_000 * input_rate + usage.output_tokens / 1_000_000 * output_rate
+
+
+SAMPLING = ("temperature", "top_p", "top_k", "seed")
+
+
+def sampling(path: Path) -> str:
+    """What the first model call actually sent: the sampling parameters, or the provider's defaults, and the
+    model snapshot the provider answered with (the Anthropic API has no seed; omitted temperature is 1.0)."""
+    log = read_eval_log(path, resolve_attachments=True)
+    call = next(e for e in log.samples[0].events if e.event == "model").call
+    sent = {k: call.request[k] for k in SAMPLING if k in call.request}
+    served = (call.response or {}).get("model", log.eval.model)
+    return f"sampling: {sent or 'provider defaults'}; max_tokens {call.request.get('max_tokens')}; served by {served}"
 
 
 def print_metrics(m: dict) -> None:
@@ -233,6 +257,7 @@ def print_metrics(m: dict) -> None:
     print(f"empty output samples: {sum(m['empty_output'].values())}/{TOTAL} "
           f"(blunder arm {m['empty_output']['blunder']}, best arm {m['empty_output']['best']})")
     print(f"cost: ${m['cost']:.2f} for model: {m['model']}")
+    print(sampling(m["path"]))
 
 def compare(eval_log, other_path: Path) -> None:
     """Paired comparison on the sample ids two runs share (a replication, or a dataset revision)."""
@@ -251,11 +276,26 @@ def compare(eval_log, other_path: Path) -> None:
               f"(lost {lost}, gained {gained}, paired se {100 * se:.1f}pp)")
 
 
+def repeats(path: Path) -> None:
+    """The spread of the headline rates over a published run and its repeats/ siblings: the same configuration re-run."""
+    logs = [path, *sorted(path.parent.glob("repeats/*/*.eval"))]
+    ms = [metrics(p)[1] for p in logs]
+    for key in ("ground_truth_accuracy", "legal_move_accuracy", "substantiation"):
+        xs = [m[key] for m in ms if m[key] is not None]  # substantiation is undefined with no blunder calls
+        if not xs:
+            print(f"{key}: undefined in every run")
+            continue
+        sd = statistics.stdev(xs) if len(xs) > 1 else 0.0
+        print(f"{key} over {len(xs)} runs: mean {100 * statistics.fmean(xs):.1f}% sd {100 * sd:.1f}pp se {100 * sd / len(xs) ** 0.5:.1f}pp")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--log_file", type=Path, required=True)
     parser.add_argument("--verbose", default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument("--compare_to", type=Path, help="an earlier run of the same instrument to pair with on shared sample ids")
+    parser.add_argument("--repeats", default=False, action=argparse.BooleanOptionalAction,
+                        help="also report the spread over this run and the runs under its repeats/ directory")
     return parser.parse_args()
 
 
@@ -265,6 +305,8 @@ def main():
     print_metrics(m)
     if parsed_args.compare_to:
         compare(eval_log, parsed_args.compare_to)
+    if parsed_args.repeats:
+        repeats(parsed_args.log_file)
 
 
 if __name__ == "__main__":
